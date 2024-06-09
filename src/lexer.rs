@@ -262,17 +262,16 @@ impl Display for TokenData {
             match self {
                 LeftParen => "(",
                 RightParen => ")",
-                LeftBrace => "{",
+                LeftBrace => "{ ",
                 RightBrace => "}",
-                Colon => ":",
-                Comma => ",",
+                Colon => ": ",
+                Comma => ", ",
                 Dot => ".",
-                Assign => "=",
-                Let => "let",
-                NewLine => "\\n\n",
-                Arrow => "->",
-                Identifier(id) => id,
-                String(_) | Integer(_) | Unknown(_) => {
+                Assign => "= ",
+                Let => "let ",
+                NewLine => "\n",
+                Arrow => " -> ",
+                Identifier(_) | String(_) | Integer(_) | Unknown(_) => {
                     done = false;
                     ""
                 }
@@ -281,9 +280,10 @@ impl Display for TokenData {
         
         if !done {
             match self {
-                String(content) => write!(f, "\"{content}\"")?,
-                Integer(i) => write!(f, "{i}")?,
-                Unknown(c) => write!(f, "`{c}`")?,
+                Identifier(name) => write!(f, "{name} ")?,
+                String(content) => write!(f, "\"{content}\" ")?,
+                Integer(i) => write!(f, "{i} ")?,
+                Unknown(c) => write!(f, " `{c}` ")?,
                 _ => ()
             }
         }

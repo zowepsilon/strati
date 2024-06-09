@@ -6,7 +6,7 @@ fn main() -> ExitCode {
     use std::fs;
     use crate::lexer::Lexer;
 
-    let source = fs::read_to_string("test.ly").expect("unable to read file");
+    let source = fs::read_to_string("test.str").expect("unable to read file");
     let tokens = match Lexer::new(&source).lex() {
         Ok(tokens) => tokens,
         Err(errors) => {
@@ -20,7 +20,7 @@ fn main() -> ExitCode {
 
 
     for tok in tokens {
-        print!(" {tok}")
+        print!("{tok}")
     }
 
     println!();
