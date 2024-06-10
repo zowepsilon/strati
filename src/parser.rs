@@ -5,6 +5,7 @@ use crate::lexer::{Token, TokenData};
 #[derive(Debug, Clone)]
 pub enum Type {
     Untyped,
+    Unit,
     Int,
     String,
     Struct {
@@ -14,6 +15,7 @@ pub enum Type {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
+    Unit,
     IntLiteral(String),
     StringLiteral(String),
     Identifier(String),
@@ -53,6 +55,7 @@ pub struct LetDeclaration {
 impl From<ExpressionKind> for Expression {
     fn from(kind: ExpressionKind) -> Self {
         match kind {
+            | ExpressionKind::Unit => Expression { kind, ty: Type::Unit },
             | ExpressionKind::IntLiteral(_) => Expression { kind, ty: Type::Int },
             | ExpressionKind::StringLiteral(_) => Expression { kind, ty: Type::String },
             | _ => Expression { kind, ty: Type::Untyped }
@@ -160,8 +163,6 @@ impl Parser {
             _ => Some(Statement::Expression(self.expression()?))
         };
         
-        expect!(self, TokenData::NewLine)?;
-        self.newlines();
         stmt
     }
 
@@ -197,11 +198,16 @@ impl Parser {
             TokenData::String(value) => Some(ExpressionKind::StringLiteral(value).into()),
             TokenData::Identifier(value) => Some(ExpressionKind::Identifier(value).into()),
             TokenData::LeftParen => {
-                self.newlines();
-                let expr = self.expression()?;
+                if let Some(Token { data: TokenData::RightParen, .. }) = self.tokens.peek() {
+                    let _ = self.tokens.next();
+                    Some(ExpressionKind::Unit.into())
+                } else {
+                    self.newlines();
+                    let expr = self.expression()?;
 
-                expect!(self, TokenData::RightParen)?;
-                Some(expr)
+                    expect!(self, TokenData::RightParen)?;
+                    Some(expr)
+                }
             },
             TokenData::LeftBrace => {
                 self.newlines();
@@ -213,6 +219,15 @@ impl Parser {
                         break;
                     }
                     statements.push(self.statement()?);
+
+                    match self.tokens.peek()?.data {
+                        TokenData::NewLine => {
+                            let _ = self.tokens.next();
+                        },
+                        TokenData::RightBrace => continue,
+                        _ => expect!(self, TokenData::NewLine)?,
+                    }
+                    self.newlines();
                 }
 
 
@@ -248,7 +263,11 @@ impl Parser {
         if TRACE { println!("ty {:?}", self.tokens.peek().unwrap()); }
         match self.tokens.next()?.data {
             TokenData::Identifier(x) if x == "int" => Some(Type::Int),
-            TokenData::Identifier(x) if x == "string" => Some(Type::Int),
+            TokenData::Identifier(x) if x == "string" => Some(Type::String),
+            TokenData::LeftParen => {
+                expect!(self, TokenData::RightParen)?;
+                Some(Type::Unit)
+            }
             TokenData::Struct => {
                 expect!(self, TokenData::LeftBrace)?;
 

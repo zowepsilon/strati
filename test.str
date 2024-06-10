@@ -18,4 +18,5 @@ let _ = {
     b
 }
 
-let nothing = fun(): int -> {}
+let nothing = fun(): () -> ()
+let nothing = fun(): int -> {42}

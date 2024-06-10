@@ -11,8 +11,8 @@ newline = "\n"
 
 list(X) = newline*, ( X, newline*, (",", newline*, X, newline*)* )?, ","?, newline*
 
-statement = expression, newline+
-          | let_statement, newline+
+statement = expression
+          | let_statement
 
 expression = expression_value, annotation?
            | fun_expression
@@ -22,7 +22,7 @@ expression_value = integer
                  | string
                  | identifier
                  | "(", newline*, expression, newline*, ")"
-                 | "{", newline*, statement*, "}"
+                 | "{", newline*, (statement, newline)*, statement, newline?, "}"
                  | expression_value, "(", list(expression), ")"
                  // todo if
 
