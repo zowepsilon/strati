@@ -22,6 +22,8 @@ pub enum TokenData {
 
     // keywords
     Let,
+    Fun,
+    Struct,
 
     // specials
     NewLine,
@@ -117,6 +119,8 @@ impl<'a> Lexer<'a> {
                 return Token {
                     data: match content.as_str() {
                         "let" => TokenData::Let,
+                        "fun" => TokenData::Fun,
+                        "struct" => TokenData::Struct,
                         _ => TokenData::Identifier(content),
                     },
                     pos: start_position,
@@ -133,7 +137,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn number(&mut self, start: char) -> Token {
-        let mut content = start.to_string();
+        let mut content = start.to_string(); 
 
         let start_position = self.current;
 
@@ -269,6 +273,8 @@ impl Display for TokenData {
                 Dot => ".",
                 Assign => "= ",
                 Let => "let ",
+                Fun => "fun ",
+                Struct => "struct ",
                 NewLine => "\n",
                 Arrow => " -> ",
                 Identifier(_) | String(_) | Integer(_) | Unknown(_) => {

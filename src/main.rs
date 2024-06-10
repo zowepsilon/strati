@@ -1,10 +1,12 @@
 use std::process::ExitCode;
 
 mod lexer;
+mod parser;
 
 fn main() -> ExitCode {
     use std::fs;
     use crate::lexer::Lexer;
+    use crate::parser::Parser;
 
     let source = fs::read_to_string("test.str").expect("unable to read file");
     let tokens = match Lexer::new(&source).lex() {
@@ -17,13 +19,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    
+    let ast = Parser::new(tokens).parse().unwrap();
 
-
-    for tok in tokens {
-        print!("{tok}")
-    }
-
-    println!();
+    println!("{ast:#?}");
 
     ExitCode::SUCCESS
 }
