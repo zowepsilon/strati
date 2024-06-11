@@ -11,7 +11,8 @@ pub enum TokenData {
     Colon,
     Comma,
     Dot,
-    Arrow,
+    ThinArrow,
+    FatArrow,
 
     Assign,
 
@@ -212,7 +213,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.error(LexingErrorKind::MisplacedCharacter('-'));
                         self.token(TokenData::Unknown('-')) 
                     },
-                    self.token(Arrow)
+                    self.token(ThinArrow)
                 ),
                 '/' => two_char_token! {
                     '/',
@@ -230,7 +231,11 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next()?
                     }
                 },
-                '=' => self.token(Assign),
+                '=' => two_char_token!(
+                    '>',
+                    self.token(Assign),
+                    self.token(FatArrow)
+                ),
                 '"' => match self.string() {
                     Ok(token) => token,
                     Err(err) => {
@@ -276,7 +281,8 @@ impl Display for TokenData {
                 Fun => "fun ",
                 Struct => "struct ",
                 NewLine => "\n",
-                Arrow => " -> ",
+                ThinArrow => " -> ",
+                FatArrow => " => ",
                 Identifier(_) | String(_) | Integer(_) | Unknown(_) => {
                     done = false;
                     ""

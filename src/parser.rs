@@ -297,7 +297,7 @@ impl Parser {
         }, sep: TokenData::Comma, end: TokenData::RightParen);
 
         let return_type = self.annotation()?;
-        expect!(self, TokenData::Arrow)?;
+        expect!(self, TokenData::FatArrow)?;
 
         let body = self.expression()?;
         let body = Box::new(body);
