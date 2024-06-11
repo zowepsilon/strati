@@ -13,6 +13,7 @@ list(X) = newline*, ( X, newline*, (",", newline*, X, newline*)* )?, ","?, newli
 
 statement = expression
           | let_statement
+          | assign_statement
 
 expression = expression_value, annotation?
            | fun_expression
@@ -32,6 +33,9 @@ ty = "int"
 
 let_statement = "let", identifier, annotation?, "=", expression
 
+assign_statement = identifier, "=", expression
+
 fun_expression = "fun", "(",
            list(identifier, annotation), ")", 
            annotation, "->", expression
+

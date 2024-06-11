@@ -1,71 +1,19 @@
-use std::{iter, vec};
+use std::vec;
 
 use crate::lexer::{Token, TokenData};
+use crate::ast::{
+    Program,
+    Type,
+    Expression, 
+    ExpressionKind, 
+    Statement, 
+    LetDeclaration, 
+};
 
-#[derive(Debug, Clone)]
-pub enum Type {
-    Untyped,
-    Unit,
-    Int,
-    String,
-    Struct {
-        fields: Vec<(String, Type)>,
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ExpressionKind {
-    Unit,
-    IntLiteral(String),
-    StringLiteral(String),
-    Identifier(String),
-    Fun {
-        args: Vec<(String, Type)>,
-        return_type: Type,
-        body: Box<Expression>,
-    },
-    Call {
-        func: Box<Expression>,
-        args: Vec<Expression>,
-    },
-    Block {
-        statements: Vec<Statement>
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Expression {
-    pub kind: ExpressionKind,
-    pub ty: Type,
-}
-
-#[derive(Debug, Clone)]
-pub enum Statement {
-    Let(LetDeclaration),
-    Expression(Expression),
-}
-
-#[derive(Debug, Clone)]
-pub struct LetDeclaration {
-    pub variable: String,
-    pub annotation: Option<Type>,
-    pub value: Box<Expression>,
-}
-
-impl From<ExpressionKind> for Expression {
-    fn from(kind: ExpressionKind) -> Self {
-        match kind {
-            | ExpressionKind::Unit => Expression { kind, ty: Type::Unit },
-            | ExpressionKind::IntLiteral(_) => Expression { kind, ty: Type::Int },
-            | ExpressionKind::StringLiteral(_) => Expression { kind, ty: Type::String },
-            | _ => Expression { kind, ty: Type::Untyped }
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Parser {
-    tokens: iter::Peekable<vec::IntoIter<Token>>,
+    tokens: multipeek::MultiPeek<vec::IntoIter<Token>>,
 }
 
 
@@ -127,14 +75,14 @@ macro_rules! list {
     }};
 }
 
-const TRACE: bool = true;
+const TRACE: bool = false;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser { tokens: tokens.into_iter().peekable() }
+        Parser { tokens: multipeek::multipeek(tokens.into_iter()) }
     }
 
-    pub fn parse(mut self) -> Option<Vec<LetDeclaration>> {
+    pub fn parse(mut self) -> Option<Program> {
         if TRACE { println!("parse {:?}", self.tokens.peek().unwrap()); }
         let mut declarations = vec![];
         
@@ -155,11 +103,16 @@ impl Parser {
         
         Some(declarations)
     }
+}
 
+// doc: see syntax.ebnf
+impl Parser {
     fn statement(&mut self) -> Option<Statement> {
         if TRACE { println!("statement {:?}", self.tokens.peek().unwrap()); }
-        let stmt = match self.tokens.peek()?.data {
+        let stmt = match self.tokens.peek()?.data.clone() {
             TokenData::Let => Some(Statement::Let(self.let_statement()?)),
+            TokenData::Identifier(_) 
+                if self.tokens.peek_nth(1)?.data == TokenData::Assign => self.assign_statement(),
             _ => Some(Statement::Expression(self.expression()?))
         };
         
@@ -311,6 +264,20 @@ impl Parser {
         Some(LetDeclaration {
             variable,
             annotation,
+            value
+        })
+    }
+
+    fn assign_statement(&mut self) -> Option<Statement> {
+        let TokenData::Identifier(name) = self.tokens.next()?.data
+            else { return None };
+
+        expect!(self, TokenData::Assign)?;
+
+        let value = self.expression()?;
+
+        Some(Statement::Assign {
+            name,
             value
         })
     }
