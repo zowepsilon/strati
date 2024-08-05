@@ -9,30 +9,15 @@ impl Program {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Type {
-    Untyped,
-    Unit,
-    Int,
-    String,
-    Struct {
-        fields: Vec<(String, Type)>, // TODO: change to HashMap
-    },
-    Fun {
-        args: Vec<Type>,
-        return_type: Box<Type>,
-    },
-}
-
 #[derive(Debug, Clone)]
-pub enum ExpressionKind {
+pub enum Expression {
     Unit,
     IntLiteral(String),
     StringLiteral(String),
     Identifier(String),
     Fun {
-        args: Vec<(String, Type)>,
-        return_type: Type,
+        args: Vec<(String, Expression)>,
+        return_type: Box<Expression>,
         body: Box<Expression>,
     },
     Call {
@@ -42,12 +27,6 @@ pub enum ExpressionKind {
     Block {
         statements: Vec<Statement>
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct Expression {
-    pub kind: ExpressionKind,
-    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -63,17 +42,6 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct LetDeclaration {
     pub variable: String,
-    pub annotation: Option<Type>,
+    pub annotation: Option<Expression>,
     pub value: Box<Expression>,
-}
-
-impl From<ExpressionKind> for Expression {
-    fn from(kind: ExpressionKind) -> Self {
-        match kind {
-            | ExpressionKind::Unit => Expression { kind, ty: Type::Unit },
-            | ExpressionKind::IntLiteral(_) => Expression { kind, ty: Type::Int },
-            | ExpressionKind::StringLiteral(_) => Expression { kind, ty: Type::String },
-            | _ => Expression { kind, ty: Type::Untyped }
-        }
-    }
 }

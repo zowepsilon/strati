@@ -1,13 +1,11 @@
 use std::{collections::HashMap, iter};
 
 use crate::ast::{
-    Type,
     Expression,
-    ExpressionKind,
     Statement, LetDeclaration, Program,
 };
 
-type Scope = HashMap<String, Type>;
+type Scope = HashMap<String, Expression>;
 
 #[derive(Debug, Clone)]
 pub struct Typer {
@@ -33,7 +31,7 @@ impl Typer {
         Some(Program::new(program))
     }
 
-    fn get(&self, name: &str) -> Option<Type> {
+    fn get(&self, name: &str) -> Option<Expression> {
         for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.get(name) {
                 return Some(ty.clone());
@@ -43,7 +41,7 @@ impl Typer {
         None
     }
 
-    fn add(&mut self, name: String, ty: Type) {
+    fn add(&mut self, name: String, ty: Expression) {
         self.scopes
             .last_mut()
             .expect("current scope should exist")
@@ -63,14 +61,14 @@ impl Typer {
         let Expression {kind, mut ty} = expr;
 
         let (kind, deduced_type) = match kind {
-            v @ ExpressionKind::Unit => (v, Type::Unit),
-            v @ ExpressionKind::IntLiteral(_) => (v, Type::Int),
-            v @ ExpressionKind::StringLiteral(_) => (v, Type::String),
-            ExpressionKind::Identifier(id) => {
+            v @ Expression::Unit => (v, Expression::Unit),
+            v @ Expression::IntLiteral(_) => (v, Expression::Identifier("Int".to_string())),
+            v @ Expression::StringLiteral(_) => (v, Expression::Identifier("String".to_string())),
+            Expression::Identifier(id) => {
                 let ty = self.get(&id)?;
-                (ExpressionKind::Identifier(id), ty)
+                (Expression::Identifier(id), ty)
             },
-            ExpressionKind::Fun { args, return_type, body } => {
+            Expression::Fun { args, return_type, body } => {
                 self.begin_subscope();
                 for (name, ty) in &args {
                     self.add(name.clone(), ty.clone());
@@ -90,7 +88,7 @@ impl Typer {
                 
                 (kind, Type::Fun { args: arg_types, return_type })
             },
-            ExpressionKind::Call { func, args: untyped_args } => {
+            Expression::Call { func, args: untyped_args } => {
                 let func = self.type_expression(*func)?;
                 let mut args = Vec::with_capacity(untyped_args.len());
                 for arg in untyped_args {
@@ -116,7 +114,7 @@ impl Typer {
                     _ => return None,
                 }
             },
-            ExpressionKind::Block { statements: untyped_statements } => {
+            Expression::Block { statements: untyped_statements } => {
                 self.begin_subscope();
                 let mut statements = Vec::with_capacity(untyped_statements.len());
                 for stmt in untyped_statements {
@@ -130,7 +128,7 @@ impl Typer {
                     Type::Unit
                 };
                 
-                let kind = ExpressionKind::Block { statements };
+                let kind = Expression::Block { statements };
                 (kind, ty)
             },
         };

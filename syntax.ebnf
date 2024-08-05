@@ -15,22 +15,18 @@ statement = expression
           | let_statement
           | assign_statement
 
-expression = expression_value, annotation?
+expression = integer
+           | string
+           | identifier
+           | "(", newline*, expression, newline*, ")"
+           | block_expression
+           | expression, "(", list(expression), ")"
            | fun_expression
-annotation = ":", ty
+           // todo if
 
-expression_value = integer
-                 | string
-                 | identifier
-                 | "(", newline*, expression, newline*, ")"
-                 | "{", newline*, (statement, newline)*, statement, newline?, "}"
-                 | expression_value, "(", list(expression), ")"
-                 // todo if
+block_expression = "{", newline*, (statement, newline)*, statement, newline?, "}"
 
-ty = "int"
-   | "string"
-   | "(", ")"
-   | "struct", "{", list(identifier, annotation), "}"
+annotation = ":", expression
 
 let_statement = "let", identifier, annotation?, "=", expression
 
@@ -38,5 +34,6 @@ assign_statement = identifier, "=", expression
 
 fun_expression = "fun", "(",
            list(identifier, annotation), ")", 
-           annotation, "->", expression
+           "->", expression, block_expression
+           
 
