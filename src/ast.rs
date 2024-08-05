@@ -1,4 +1,13 @@
-pub type Program = Vec<LetDeclaration>;
+#[derive(Debug)]
+pub struct Program {
+    pub declarations: Vec<LetDeclaration>,
+}
+
+impl Program {
+    pub fn new(declarations: Vec<LetDeclaration>) -> Program {
+        Program { declarations, }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {

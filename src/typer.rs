@@ -12,10 +12,10 @@ type Scope = HashMap<String, Type>;
 #[derive(Debug, Clone)]
 pub struct Typer {
     // a TypingContext should only modify its bottom (current) scope
-    scopes: Vec<Scope>, 
+    // here scopes are lexical
+    scopes: Vec<Scope>,
 }
 
-#[allow(unused)]
 impl Typer {
     pub fn new() -> Typer {
         Typer {
@@ -24,13 +24,13 @@ impl Typer {
     }
 
     pub fn type_program(mut self, untyped_program: Program) -> Option<Program> {
-        let mut program = Vec::with_capacity(untyped_program.len());
+        let mut program = Vec::with_capacity(untyped_program.declarations.len());
 
-        for declaration in untyped_program {
+        for declaration in untyped_program.declarations {
             program.push(self.type_let_declaration(declaration)?);
         }
 
-        Some(program)
+        Some(Program::new(program))
     }
 
     fn get(&self, name: &str) -> Option<Type> {
@@ -59,7 +59,7 @@ impl Typer {
         self.scopes.pop();
     }
 
-    fn type_expression(&mut self, mut expr: Expression) -> Option<Expression> {
+    fn type_expression(&mut self, expr: Expression) -> Option<Expression> {
         let Expression {kind, mut ty} = expr;
 
         let (kind, deduced_type) = match kind {
@@ -82,7 +82,7 @@ impl Typer {
                 }
                 self.end_subscope();
 
-                let arg_types = args.iter().map(|(name, ty)| ty.clone()).collect();
+                let arg_types = args.iter().map(|(_, ty)| ty.clone()).collect();
                 let body = Box::new(body);
 
                 let kind = ExpressionKind::Fun { args, return_type: return_type.clone(), body };
@@ -99,7 +99,7 @@ impl Typer {
                 match func.ty {
                     Type::Fun { args: ref expected_arg_types, ref return_type } => {
                         if !iter::zip(expected_arg_types, &args)
-                            .all(|(expected, (Expression { ty, .. }))| 
+                            .all(|(expected, Expression { ty, .. })| 
                                  *expected == *ty
                         ) { return None }
                         

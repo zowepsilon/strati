@@ -1,28 +1,7 @@
 let hello: int = 42
 let this_is_test: string = "some string"
 
-let id = fun (x: int): int => {
-    let y = {
-        x
-        "aa"
-        42
-    }
-    let z = "
-    hi
-    "
-    y = 420
-
-    y
+let id = fun (x: int): int -> {
+    42
 }
 
-let _ = {
-}
-
-let nothing = fun(): () => ()
-let forty_two = fun(): int => {42}
-
-let print = fun(x: string): () => ()
-
-let _ = {
-    print("Hello, World!")
-}

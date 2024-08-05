@@ -3,16 +3,13 @@ use std::{fmt::Display, iter::Peekable};
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenData {
     // structure
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
+    ParenBlock(Vec<Token>),
+    BraceBlock(Vec<Token>),
 
     Colon,
     Comma,
     Dot,
     ThinArrow,
-    FatArrow,
 
     Assign,
 
@@ -25,38 +22,25 @@ pub enum TokenData {
     Let,
     Fun,
     Struct,
+    Underscore,
 
     // specials
     NewLine,
-    Unknown(char),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Position { pub line: usize, pub column: usize }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub data: TokenData,
     pub pos: Position,
 }
 
-#[derive(Debug, Clone)]
-pub enum LexingErrorKind {
-    MisplacedCharacter(char),
-    UnTerminatedString(Position),
-}
-
-#[derive(Debug, Clone)]
-pub struct LexingError {
-    pub kind: LexingErrorKind,
-    pub position: Position,
-}
-
 #[derive(Debug)]
 pub struct Lexer<'a> {
     chars: Peekable<std::str::Chars<'a>>,
-    errors: Vec<LexingError>,
-
+    ok: bool,
     current: Position,
 }
 
@@ -73,32 +57,24 @@ impl<'a> Lexer<'a> {
         self.current.line += 1;
     }
 
-    fn error(&mut self, kind: LexingErrorKind) {
-        self.errors.push(LexingError {
-            kind,
-            position: self.current,
-        });
-    }
-
-    fn string(&mut self) -> Result<Token, LexingErrorKind> {
+    fn string(&mut self) -> Option<Token> {
         let mut content = String::new();
         let start_position = self.current;
 
         loop {
             self.current.column += 1;
-            match self.chars.next() {
-                None => return Err(LexingErrorKind::UnTerminatedString(start_position)),
-                Some('"') => {
-                    return Ok(Token {
+            match self.chars.next()? {
+                '"' => {
+                    return Some(Token {
                         data: TokenData::String(content),
                         pos: start_position,
                     })
                 }
-                Some('\n') => {
+                '\n' => {
                     self.new_line();
                     content.push('\n');
                 }
-                Some(ch) => content.push(ch),
+                ch => content.push(ch),
             };
         }
     }
@@ -122,6 +98,7 @@ impl<'a> Lexer<'a> {
                         "let" => TokenData::Let,
                         "fun" => TokenData::Fun,
                         "struct" => TokenData::Struct,
+                        "_" => TokenData::Underscore,
                         _ => TokenData::Identifier(content),
                     },
                     pos: start_position,
@@ -157,20 +134,21 @@ impl<'a> Lexer<'a> {
                 line: 1,
                 column: 0
             },
-            errors: Vec::new(),
+            ok: true,
         }
     }
 
-    pub fn lex(mut self) -> Result<Vec<Token>, Vec<LexingError>> {
+    pub fn lex(&mut self) -> Option<Vec<Token>> {
         let mut tokens = vec![];
         for tok in self.by_ref() {
             tokens.push(tok)
         }
         
-        if self.errors.is_empty() {
-            Ok(tokens)
+        if self.ok {
+            Some(tokens)
         } else {
-            Err(self.errors)
+            eprintln!("{:?}", self.current);
+            None
         }
     }
 }
@@ -196,30 +174,64 @@ impl<'a> Iterator for Lexer<'a> {
             };
         }
 
+        macro_rules! block {
+            ($block:ident, $end: pat) => {{
+                let mut sub = Lexer {
+                    chars: self.chars.clone(),
+                    current: self.current,
+                    ok: true,
+                };
+
+                match sub.lex() {
+                    Some(tokens) => {
+                        self.current = sub.current;
+                        self.chars = sub.chars;
+
+                        match self.chars.next() {
+                            Some($end) => self.token($block(tokens)),
+                            _ => {
+                                self.ok = false;
+                                return None;
+                            },
+                        }
+                    },
+                    None => {
+                        self.ok = false;
+                        return None;
+                    },
+                }
+
+            }}
+        }
+
         self.current.column += 1;
+
+        if let Some(')' | '}') = self.chars.peek() {
+            return None;
+        }
 
         match self.chars.next() {
             Option::Some(ch) => Option::Some(match ch {
-                '(' => self.token(LeftParen),
-                ')' => self.token(RightParen),
-                '{' => self.token(LeftBrace),
-                '}' => self.token(RightBrace),
+                '(' => block!(ParenBlock, ')'),
+                '{' => block!(BraceBlock, '}'),
+                ')' | '}' => unreachable!("end of block should have been detected"),
                 ':' => self.token(Colon),
                 ',' => self.token(Comma),
                 '.' => self.token(Dot),
+                '=' => self.token(Assign),
                 '-' => two_char_token!(
                     '>', 
                     {
-                        self.error(LexingErrorKind::MisplacedCharacter('-'));
-                        self.token(TokenData::Unknown('-')) 
+                        self.ok = false;
+                        return None;
                     },
                     self.token(ThinArrow)
                 ),
                 '/' => two_char_token! {
                     '/',
                     {
-                        self.error(LexingErrorKind::MisplacedCharacter('/'));
-                        self.token(TokenData::Unknown('/'))
+                        self.ok = false;
+                        return None;
                     },
                     {
                         loop {
@@ -231,16 +243,11 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next()?
                     }
                 },
-                '=' => two_char_token!(
-                    '>',
-                    self.token(Assign),
-                    self.token(FatArrow)
-                ),
                 '"' => match self.string() {
-                    Ok(token) => token,
-                    Err(err) => {
-                        self.error(err);
-                        self.next()?
+                    Some(token) => token,
+                    None => {
+                        self.ok = false;
+                        return None;
                     }
                 },
                 '\n' => {
@@ -251,8 +258,9 @@ impl<'a> Iterator for Lexer<'a> {
                 letter if letter.is_numeric() => self.number(letter),
                 ' ' | '\t' => self.next()?,
                 other => {
-                    self.error(LexingErrorKind::MisplacedCharacter(other));
-                    self.token(Unknown(other))
+                    dbg!(other);
+                    self.ok = false;
+                    return None;
                 }
             }),
             None => None,
@@ -262,45 +270,32 @@ impl<'a> Iterator for Lexer<'a> {
 
 impl Display for TokenData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use TokenData::*;
-        let mut done = true;
-
-        write!(
-            f,
-            "{}",
-            match self {
-                LeftParen => "(",
-                RightParen => ")",
-                LeftBrace => "{ ",
-                RightBrace => "}",
-                Colon => ": ",
-                Comma => ", ",
-                Dot => ".",
-                Assign => "= ",
-                Let => "let ",
-                Fun => "fun ",
-                Struct => "struct ",
-                NewLine => "\n",
-                ThinArrow => " -> ",
-                FatArrow => " => ",
-                Identifier(_) | String(_) | Integer(_) | Unknown(_) => {
-                    done = false;
-                    ""
-                }
+        use TokenData as TD;
+        match self {
+            TD::ParenBlock(inner) => {
+                write!(f, "(")?;
+                for tok in inner { write!(f, "{}", tok)?; }
+                write!(f, ")")
             }
-        )?;
-        
-        if !done {
-            match self {
-                Identifier(name) => write!(f, "{name} ")?,
-                String(content) => write!(f, "\"{content}\" ")?,
-                Integer(i) => write!(f, "{i} ")?,
-                Unknown(c) => write!(f, " `{c}` ")?,
-                _ => ()
+            TD::BraceBlock(inner) => {
+                write!(f, "{{")?;
+                for tok in inner { write!(f, "{}", tok)?; }
+                write!(f, "}}")
             }
+            TD::Colon => write!(f, "{}", ": "),
+            TD::Comma => write!(f, "{}", ", "),
+            TD::Dot => write!(f, "{}", "."),
+            TD::Assign => write!(f, "{}", "= "),
+            TD::Let => write!(f, "{}", "let "),
+            TD::Fun => write!(f, "{}", "fun "),
+            TD::Struct => write!(f, "{}", "struct "),
+            TD::Underscore => write!(f, "{}", "_"),
+            TD::NewLine => write!(f, "{}", "\n"),
+            TD::ThinArrow => write!(f, "{}", " -> "),
+            TD::Identifier(name) => write!(f, "{name} "),
+            TD::String(content) => write!(f, "\"{content}\" "),
+            TD::Integer(i) => write!(f, "{i} "),
         }
-        
-        Ok(())
     }
 }
 

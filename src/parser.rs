@@ -16,7 +16,6 @@ pub struct Parser {
     tokens: multipeek::MultiPeek<vec::IntoIter<Token>>,
 }
 
-
 macro_rules! expect {
     ($self:ident, $tok:pat) => {
         match $self.tokens.next()?.data {
@@ -30,42 +29,33 @@ macro_rules! expect {
 }
 
 macro_rules! list {
-    ($self:ident, $to_parse:expr, sep: $sep:pat, end: $end:pat) => {'list: {
+    ($self:ident, $to_parse:expr, sep: $sep:pat) => {'list: {
         $self.newlines();
 
-        let first = match $self.tokens.peek()?.data {
-            $end => {
-                let _ = $self.tokens.next();
-                
-                break 'list Vec::new();
-            },
-            $sep => {
-                let _ = $self.tokens.next();
-                $self.newlines();
-                expect!($self, $end)?;
+        let first = match $self.tokens.peek() {
+            None => break 'list Vec::new(),
+            Some(Token { data, .. }) => match data {
+                $sep => {
+                    let _ = $self.tokens.next();
+                    $self.newlines();
+                    break 'list Vec::new();
 
-                break 'list Vec::new();
-
+                },
+                _ => $to_parse,
             }
-            _ => $to_parse,
         };
 
         let mut args = vec![first];
         $self.newlines();
 
         loop {
-            match $self.tokens.next()?.data {
-                $sep => {
-                    $self.newlines();
-                    if let $end = $self.tokens.peek()?.data {
-                        let _ = $self.tokens.next();
-
-                        break;
-                    }
-                },
-                $end => break,
-                _ => return None
-            }
+            match $self.tokens.peek() {
+                None => break,
+                Some(Token { data, .. }) => match data {
+                    $sep => $self.newlines(),
+                    _ => return None
+                }
+            };
 
             $self.newlines();
             args.push($to_parse);
@@ -79,11 +69,11 @@ const TRACE: bool = false;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
-        Parser { tokens: multipeek::multipeek(tokens.into_iter()) }
+        Parser { tokens: multipeek::multipeek(tokens) }
     }
 
     pub fn parse(mut self) -> Option<Program> {
-        if TRACE { println!("parse {:?}", self.tokens.peek().unwrap()); }
+        if TRACE { dbg!("parse", self.tokens.peek()); }
         let mut declarations = vec![];
         
         self.newlines();
@@ -92,7 +82,8 @@ impl Parser {
             let stmt = match self.let_statement() {
                 Some(stmt) => stmt,
                 None => {
-                    eprintln!("{:?}", self.tokens.next().unwrap());
+                    // dbg!(self.tokens.next());
+                    // dbg!(declarations);
 
                     return None;
                 }
@@ -101,26 +92,25 @@ impl Parser {
             self.newlines();
         }
         
-        Some(declarations)
+        Some(Program::new(declarations))
     }
 }
 
 // doc: see syntax.ebnf
 impl Parser {
     fn statement(&mut self) -> Option<Statement> {
-        if TRACE { println!("statement {:?}", self.tokens.peek().unwrap()); }
-        let stmt = match self.tokens.peek()?.data.clone() {
+        if TRACE { dbg!("statement", self.tokens.peek()); }
+        
+        match self.tokens.peek()?.data.clone() {
             TokenData::Let => Some(Statement::Let(self.let_statement()?)),
             TokenData::Identifier(_) 
                 if self.tokens.peek_nth(1)?.data == TokenData::Assign => self.assign_statement(),
             _ => Some(Statement::Expression(self.expression()?))
-        };
-        
-        stmt
+        }
     }
 
     fn expression(&mut self) -> Option<Expression> {
-        if TRACE { println!("expression {:?}", self.tokens.peek().unwrap()); }
+        if TRACE { dbg!("expression", self.tokens.peek().unwrap()); }
         match self.tokens.peek()?.data {
             TokenData::Fun => {self.fun_expression()},
             _ => {
@@ -137,101 +127,104 @@ impl Parser {
     }
 
     fn annotation(&mut self) -> Option<Type> {
-        if TRACE { println!("annotation {:?}", self.tokens.peek().unwrap()); }
+        if TRACE { dbg!("annotation", self.tokens.peek().unwrap()); }
         expect!(self, TokenData::Colon)?;
 
         self.ty()
     }
 
-
     fn expression_value(&mut self) -> Option<Expression> {
-        if TRACE { println!("expression_value {:?}", self.tokens.peek().unwrap()); }
-        let maybe_func = match self.tokens.next()?.data {
+        if TRACE { dbg!("expression_value", self.tokens.peek().unwrap()); }
+        let mut maybe_func = match self.tokens.next()?.data {
             TokenData::Integer(value) => Some(ExpressionKind::IntLiteral(value).into()),
             TokenData::String(value) => Some(ExpressionKind::StringLiteral(value).into()),
             TokenData::Identifier(value) => Some(ExpressionKind::Identifier(value).into()),
-            TokenData::LeftParen => {
-                if let Some(Token { data: TokenData::RightParen, .. }) = self.tokens.peek() {
-                    let _ = self.tokens.next();
+            TokenData::ParenBlock(inner) => {
+                if inner.is_empty() {
                     Some(ExpressionKind::Unit.into())
                 } else {
-                    self.newlines();
-                    let expr = self.expression()?;
-
-                    expect!(self, TokenData::RightParen)?;
+                    let mut inner = Parser::new(inner);
+                    inner.newlines();
+                    let expr = inner.expression()?;
                     Some(expr)
                 }
             },
-            TokenData::LeftBrace => {
-                self.newlines();
+            TokenData::BraceBlock(inner) => 'brace: {
+                if inner.is_empty() {
+                    break 'brace Some(ExpressionKind::Block {
+                        statements: vec![],
+                    }.into());
+                }
+
+                let mut inner = Parser::new(inner);
+
+                inner.newlines();
 
                 let mut statements = vec![];
 
-                loop {
-                    if let Some(Token { data: TokenData::RightBrace, .. }) = self.tokens.peek() {
-                        break;
-                    }
-                    statements.push(self.statement()?);
+                while let Some(_) = inner.tokens.peek() {
+                    statements.push(inner.statement()?);
 
-                    match self.tokens.peek()?.data {
+                    match inner.tokens.peek()?.data {
                         TokenData::NewLine => {
-                            let _ = self.tokens.next();
+                            let _ = inner.tokens.next();
                         },
-                        TokenData::RightBrace => continue,
-                        _ => expect!(self, TokenData::NewLine)?,
+                        _ => expect!(inner, TokenData::NewLine)?,
                     }
-                    self.newlines();
+                    inner.newlines();
                 }
 
-
-                expect!(self, TokenData::RightBrace)?;
                 Some(ExpressionKind::Block { statements }.into())
             },
             _ => None,
         }?;
 
-        if let Some(Token {data: TokenData::LeftParen, ..}) = self.tokens.peek() {
-            let _ = self.tokens.next();
-            
-            let args = list!(self, 
-                self.expression()?, 
-                sep: TokenData::Comma, 
-                end: TokenData::RightParen
+        while let Some(Token {data: TokenData::ParenBlock(_), ..}) = self.tokens.peek() {
+            let Some(Token {data: TokenData::ParenBlock(inner), ..}) = self.tokens.next()
+                else { unreachable!("self.tokens was peeked successfully") };
+
+            let mut inner = Parser::new(inner);
+           
+            let args = list!(inner,
+                inner.expression()?, 
+                sep: TokenData::Comma
             );
-            
+
             let func = Box::new(maybe_func);
 
-            Some(ExpressionKind::Call {
+            maybe_func = ExpressionKind::Call {
                 func,
                 args
-            }.into())
-            
-        } else {
-            Some(maybe_func)
+            }.into();
+
         }
 
+        Some(maybe_func)
     }
 
     fn ty(&mut self) -> Option<Type> {
-        if TRACE { println!("ty {:?}", self.tokens.peek().unwrap()); }
+        if TRACE { dbg!("ty", self.tokens.peek().unwrap()); }
         match self.tokens.next()?.data {
-            TokenData::Identifier(x) if x == "int" => Some(Type::Int),
+            TokenData::Identifier(x) if x == "int"    => Some(Type::Int),
             TokenData::Identifier(x) if x == "string" => Some(Type::String),
-            TokenData::LeftParen => {
-                expect!(self, TokenData::RightParen)?;
+            TokenData::ParenBlock(inner) => {
+                if !inner.is_empty() { return None; }
                 Some(Type::Unit)
             }
             TokenData::Struct => {
-                expect!(self, TokenData::LeftBrace)?;
+                let Some(Token { data: TokenData::BraceBlock(inner), .. }) = self.tokens.next()
+                    else { return None };
 
-                let fields = list!(self, {
-                    let Token { data: TokenData::Identifier(name), .. } = self.tokens.next()?
+                let mut inner = Parser::new(inner);
+
+                let fields = list!(inner, {
+                    let Token { data: TokenData::Identifier(name), .. } = inner.tokens.next()?
                         else { return None };
 
-                    let ty = self.annotation()?;
+                    let ty = inner.annotation()?;
 
                     (name, ty)
-                }, sep: TokenData::Comma, end: TokenData::RightBrace);
+                }, sep: TokenData::Comma);
 
                 Some(Type::Struct {
                     fields,
@@ -241,9 +234,8 @@ impl Parser {
         }
     }
 
-
     fn let_statement(&mut self) -> Option<LetDeclaration> {
-        if TRACE { println!("let_statement {:?}", self.tokens.peek().unwrap()); }
+        if TRACE { dbg!("let_statement", self.tokens.peek().unwrap()); }
         expect!(self, TokenData::Let)?;
 
         let Some(Token { data: TokenData::Identifier(variable), .. }) = self.tokens.next()
@@ -283,21 +275,28 @@ impl Parser {
     }
 
     fn fun_expression(&mut self) -> Option<Expression> {
-        if TRACE { println!("fun_expression {:?}", self.tokens.peek().unwrap()); }
+        if TRACE { dbg!("fun_expression", self.tokens.peek()); }
         expect!(self, TokenData::Fun)?;
-        expect!(self, TokenData::LeftParen)?;
 
-        let args = list!(self, {
-            let Token { data: TokenData::Identifier(name), .. } = self.tokens.next()?
+        let Some(Token { data: TokenData::ParenBlock(inner), .. }) = self.tokens.next()
+            else { return None };
+
+        let mut inner = Parser::new(inner);
+
+        let args = list!(inner, {
+            let Token { data: TokenData::Identifier(name), .. } = inner.tokens.next()?
                 else { return None };
 
-            let ty = self.annotation()?;
+            let ty = inner.annotation()?;
 
             (name, ty)
-        }, sep: TokenData::Comma, end: TokenData::RightParen);
+        }, sep: TokenData::Comma);
 
-        let return_type = self.annotation()?;
-        expect!(self, TokenData::FatArrow)?;
+        expect!(self, TokenData::Colon)?;
+
+        let return_type = self.ty()?;
+
+        expect!(self, TokenData::ThinArrow)?;
 
         let body = self.expression()?;
         let body = Box::new(body);
@@ -310,12 +309,12 @@ impl Parser {
     }
 
     fn newlines(&mut self) {
-        if TRACE { println!("newlines {:?}", self.tokens.peek().unwrap()); }
-        while let 
-            Some(Token {
-                data: TokenData::NewLine, .. 
-            }) = self.tokens.peek() {
+        if TRACE {
+            dbg!("newlines", self.tokens.peek());
+        }
+        while let Some(Token { data: TokenData::NewLine, .. }) = self.tokens.peek() {
             self.tokens.next();
         }
+
     }
 }

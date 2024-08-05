@@ -29,6 +29,7 @@ expression_value = integer
 
 ty = "int"
    | "string"
+   | "(", ")"
    | "struct", "{", list(identifier, annotation), "}"
 
 let_statement = "let", identifier, annotation?, "=", expression
