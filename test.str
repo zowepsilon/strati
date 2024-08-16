@@ -5,8 +5,9 @@ let my_int = fun (x: int) -> . {
     .MyInt(x)
 }
 
+let y = 69
 let f = fun () -> int {
-    my_int(42)
+    my_int(y)
 }
 
 f()
