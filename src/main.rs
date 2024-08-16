@@ -1,17 +1,15 @@
-use std::{process::ExitCode, env};
-
 mod lexer;
 mod ast;
 mod parser;
-// mod typer;
 mod interpreter;
 
-fn main() -> ExitCode {
-    use std::fs;
+fn main() {
+    use std::{env, fs};
     use crate::lexer::Lexer;
     use crate::parser::Parser;
 
     let mut args = env::args();
+
     let _ = args.next();
     let source_filename = args.next().expect("please provide a source file");
 
@@ -23,6 +21,4 @@ fn main() -> ExitCode {
     program.interpret();
 
     // println!("{typed_program:#?}");
-
-    ExitCode::SUCCESS
 }

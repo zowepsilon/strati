@@ -22,9 +22,11 @@ expression = integer
            | block_expression
            | expression, "(", list(expression), ")"
            | fun_expression
+           | constructor
            // todo if
 
-block_expression = "{", newline*, (statement, newline)*, statement, newline?, "}"
+block_expression = "{", statements, "}"
+statements = newline*, (statement, newline)*, statement, newline?
 
 annotation = ":", expression
 
@@ -35,5 +37,7 @@ assign_statement = identifier, "=", expression
 fun_expression = "fun", "(",
            list(identifier, annotation), ")", 
            "->", expression, block_expression
-           
 
+constructor = 
+
+program = statements

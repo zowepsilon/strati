@@ -1,20 +1,17 @@
 #[derive(Debug)]
 pub struct Program {
-    pub declarations: Vec<LetDeclaration>,
-}
-
-impl Program {
-    pub fn new(declarations: Vec<LetDeclaration>) -> Program {
-        Program { declarations, }
-    }
+    pub root: Vec<Statement>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Unit,
     IntLiteral(String),
     StringLiteral(String),
     Identifier(String),
+    Constructor {
+        name: Option<String>,
+        data: Vec<Expression>,
+    },
     Fun {
         args: Vec<(String, Expression)>,
         return_type: Box<Expression>,
@@ -31,17 +28,14 @@ pub enum Expression {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Let(LetDeclaration),
+    Let {
+        variable: String,
+        annotation: Option<Expression>,
+        value: Box<Expression>,
+    },
     Expression(Expression),
     Assign {
         name: String,
         value: Expression,
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct LetDeclaration {
-    pub variable: String,
-    pub annotation: Option<Expression>,
-    pub value: Box<Expression>,
 }
