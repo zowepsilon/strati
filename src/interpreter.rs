@@ -128,6 +128,8 @@ impl Runtime {
             Statement::Expression(expr) =>  Some(self.evaluate(expr)),
             Statement::Let { variable, annotation: _, value } => {
                 let value_id = self.evaluate(*value);
+                let value_id = self.shallow_copy_object(value_id);
+
                 self.scopes.last_mut().expect("current scope should exist").insert(variable, value_id);
 
                 None

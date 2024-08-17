@@ -49,7 +49,10 @@ macro_rules! list {
             match $self.tokens.peek() {
                 None => break,
                 Some(Token { data, .. }) => match data {
-                    $sep => $self.newlines(),
+                    $sep => {
+                        let _ = $self.tokens.next();
+                        $self.newlines();
+                    },
                     _ => return None
                 }
             };
