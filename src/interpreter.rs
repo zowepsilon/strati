@@ -59,7 +59,7 @@ impl Runtime {
                 let context = to_bind.into_iter()
                     .map(|name| (
                         name.clone(), 
-                        self.shallow_copy_object(self.get_variable(name))
+                        self.get_variable(name)
                     ))
                     .collect();
 
