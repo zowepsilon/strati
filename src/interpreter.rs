@@ -20,7 +20,11 @@ enum Object {
         context: HashMap<String, ObjectId>,
         args: Vec<String>,
         body: Expression,
-    }
+    },
+    BuiltinFunction {
+        name: &'static str,
+        handler: fn (&mut Runtime, Vec<ObjectId>) -> ObjectId,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -77,37 +81,48 @@ impl Runtime {
             },
             Expression::Call { func, args: parameters } => {
                 let func_id = self.evaluate(*func);
-                let Object::Closure { context, args, body } = self.objects[&func_id].data.clone()
-                    else { panic!("type error: expected closure value") };
+                match self.objects[&func_id].data.clone() {
+                    Object::Closure { context, args, body } => {
+                        let Expression::Block { statements } = body
+                            else { panic!("the parser guarantees that the function body is a block") };
+                        
+                        let parameters: Vec<_> = parameters.into_iter()
+                            .map(|p| self.evaluate(p))
+                            .collect();
 
-                let Expression::Block { statements } = body
-                    else { panic!("the parser guarantees that the function body is a block") };
-                
-                let parameters: Vec<_> = parameters.into_iter()
-                               .map(|p| self.evaluate(p))
-                               .collect();
+                        self.scopes.push(context);
 
-                self.scopes.push(context);
-
-                assert_eq!(args.len(), parameters.len(), "invalid argument count");
+                        assert_eq!(args.len(), parameters.len(), "invalid argument count");
 
 
-                let current_scope = self.scopes.last_mut().expect("current scope should exist");
-                for (arg_name, value) in iter::zip(args, parameters) {
-                    current_scope.insert(arg_name, value);
+                        let current_scope = self.scopes.last_mut().expect("current scope should exist");
+                        for (arg_name, value) in iter::zip(args, parameters) {
+                            current_scope.insert(arg_name, value);
+                        }
+
+                        let mut last_value = None;
+                        for stmt in statements {
+                            last_value = self.run_statement(stmt);
+                        }
+                        
+                        self.scopes.pop();
+                        
+                        last_value.unwrap_or_else(||
+                            // " . " is the unit value
+                            self.new_object(Object::Constructor { name: None, data: Vec::new() })
+                        )
+                    },
+                    Object::BuiltinFunction { handler, .. } => {
+                        let parameters: Vec<_> = parameters.into_iter()
+                            .map(|p| self.evaluate(p))
+                            .collect();
+                        
+                        handler(self, parameters)
+                    },
+                    _ => panic!("type error: expected closure value")
                 }
 
-                let mut last_value = None;
-                for stmt in statements {
-                    last_value = self.run_statement(stmt);
-                }
-                
-                self.scopes.pop();
-                
-                last_value.unwrap_or_else(||
-                    // " . " is the unit value
-                    self.new_object(Object::Constructor { name: None, data: Vec::new() })
-                )
+
             },
             Expression::Block { statements } => {
                 self.scopes.push(self.scopes.last().cloned().unwrap_or_default());
@@ -187,7 +202,19 @@ impl Runtime {
 
                 Object::Constructor { name, data }
             },
-            Object::Closure { .. } => todo!(),
+            Object::Closure { context, args, body } => {
+                let context = context.clone();
+                let args = args.clone();
+                let body = body.clone();
+
+                let context =
+                    context.into_iter()
+                    .map(|(name, id)| (name, self.deep_copy_object(id)))
+                    .collect();
+                
+                Object::Closure { context, args, body }
+            },
+            obj @ Object::BuiltinFunction{..} => obj.clone(),
         };
 
         self.new_object(object)
@@ -259,6 +286,19 @@ impl Runtime {
             },
         }
     }
+
+    fn add_builtin_function(&mut self, name: &'static str, handler: fn(&mut Runtime, Vec<ObjectId>) -> ObjectId) {
+        let id = self.new_object(Object::BuiltinFunction { name, handler });
+        
+        if self.scopes.len() == 0 {
+            self.scopes.push(HashMap::new());
+        }
+
+        self.scopes
+            .last_mut()
+            .expect("current scope should exist")
+            .insert(name.to_string(), id);
+    }
 }
 
 impl Program {
@@ -268,6 +308,18 @@ impl Program {
             objects: HashMap::new(),
             next_id: 0,
         };
+        
+        rt.add_builtin_function("dump", |rt, args| {
+            print!("(");
+            for id in args {
+                let arg = &rt.objects[&id];
+                print!("{}, ", arg.data.fmt(rt));
+            }
+
+            println!(")");
+
+            rt.new_object(Object::Constructor { name: None, data: Vec::new() })
+        });
 
         let id = rt.evaluate(Expression::Block {
             statements: self.root,
@@ -276,8 +328,6 @@ impl Program {
         println!("Returned {}", rt.objects[&id].data.fmt(&rt));
     }
 }
-
-
 
 impl Object {
     fn fmt(&self, rt: &Runtime) -> String {
@@ -315,6 +365,7 @@ impl Object {
                 
                 fmt
             },
+            Object::BuiltinFunction { name, .. } => format!("builtin function {name}")
         }
     }
 }

@@ -17,6 +17,8 @@ let to_2 = fun(x: Int) {
 
 let objects = fun() -> Int {
     let x = 7
+
+    dump(.hello(42, "wow"))
         
     to_2(x)
 
