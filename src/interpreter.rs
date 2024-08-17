@@ -43,7 +43,11 @@ impl Runtime {
         match expr {
             Expression::IntLiteral(i) => self.new_object( Object::Int(i.parse().expect("lexer should have validated string")) ),
             Expression::StringLiteral(s) => self.new_object( Object::String(s) ),
-            Expression::Identifier(var) => self.get_variable(&var),
+            Expression::Identifier(var) => {
+                let id = self.get_variable(&var);
+
+                self.shallow_copy_object(id)
+            },
             Expression::Constructor { name, data } => {
                 let data = data.into_iter()
                                .map(|e| self.evaluate(e))
@@ -128,7 +132,6 @@ impl Runtime {
             Statement::Expression(expr) =>  Some(self.evaluate(expr)),
             Statement::Let { variable, annotation: _, value } => {
                 let value_id = self.evaluate(*value);
-                let value_id = self.shallow_copy_object(value_id);
 
                 self.scopes.last_mut().expect("current scope should exist").insert(variable, value_id);
 

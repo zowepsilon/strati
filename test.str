@@ -1,5 +1,5 @@
 let y = 69
-let f = fun () -> .MyInt(int) {
+let f = fun () -> .MyInt(Int) {
     .MyInt(y)
 }
 
@@ -11,5 +11,16 @@ let g = fun () {
     f()
 }
 
-.hi_how_do_you_do(., ., .)
+let to_2 = fun(x: Int) {
+    x = 2
+}
 
+let objects = fun() -> Int {
+    let x = 7
+        
+    to_2(x)
+
+    x
+}
+
+objects()
