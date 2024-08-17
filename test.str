@@ -1,13 +1,12 @@
-let hello: Int = 42
-let this_is_test: String = "some string"
-
-let my_int = fun (x: int) -> . {
-    .MyInt(x)
-}
-
 let y = 69
-let f = fun () -> int {
-    my_int(y)
+let f = fun () -> .MyInt(int) {
+    .MyInt(y)
 }
 
-f()
+let g = fun () {
+    let y = 42
+
+    f()
+}
+
+g()

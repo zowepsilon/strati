@@ -241,11 +241,15 @@ impl Parser {
 
             (name, ty)
         }, sep: TokenData::Comma);
+        
+        let return_type = match self.tokens.peek() {
+            Some(Token{ data: TokenData::ThinArrow, .. }) => {
+                let _ = self.tokens.next();
 
-        expect!(self, TokenData::ThinArrow)?;
-
-        let return_type = self.expression()?;
-        let return_type = Box::new(return_type);
+                Some(Box::new(self.expression()?))
+            },
+            _ => None,
+        };
 
         let body = self.block_expression()?;
         let body = Box::new(body);

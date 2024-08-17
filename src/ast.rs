@@ -14,7 +14,7 @@ pub enum Expression {
     },
     Fun {
         args: Vec<(String, Expression)>,
-        return_type: Box<Expression>,
+        return_type: Option<Box<Expression>>,
         body: Box<Expression>,
     },
     Call {
