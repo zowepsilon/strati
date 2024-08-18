@@ -23,7 +23,8 @@ pub enum Expression {
     },
     Block {
         statements: Vec<Statement>
-    }
+    },
+    Meta(Box<Expression>),
 }
 
 #[derive(Debug, Clone)]

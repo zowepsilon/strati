@@ -6,14 +6,10 @@ type ObjectId = usize;
 
 #[derive(Debug, Clone)]
 enum Object {
-    #[allow(unused)]
     Int(i32),
-    #[allow(unused)]
     String(String),
     Constructor {
-        #[allow(unused)]
         name: Option<String>,
-        #[allow(unused)]
         data: Vec<ObjectId>,
     },
     Closure {
@@ -31,6 +27,7 @@ enum Object {
 struct ObjectCell {
     data: Object,
     #[allow(unused)]
+    // TODO: reference counting
     count: usize,
 }
 
@@ -40,7 +37,20 @@ struct Runtime {
     scopes: Vec<HashMap<String, ObjectId>>,
     objects: HashMap<ObjectId, ObjectCell>,
     next_id: ObjectId,
+    meta: bool,
 }
+
+impl Runtime {
+    fn new(meta: bool) -> Runtime {
+        Runtime {
+            scopes: vec![HashMap::new()],
+            objects: HashMap::new(),
+            next_id: 0,
+            meta,
+        }
+    }
+}
+
 
 impl Runtime {
     fn evaluate(&mut self, expr: Expression) -> ObjectId {
@@ -49,7 +59,6 @@ impl Runtime {
             Expression::StringLiteral(s) => self.new_object( Object::String(s) ),
             Expression::Identifier(var) => {
                 let id = self.get_variable(&var);
-
                 self.shallow_copy_object(id)
             },
             Expression::Constructor { name, data } => {
@@ -121,8 +130,6 @@ impl Runtime {
                     },
                     _ => panic!("type error: expected closure value")
                 }
-
-
             },
             Expression::Block { statements } => {
                 self.scopes.push(self.scopes.last().cloned().unwrap_or_default());
@@ -139,6 +146,8 @@ impl Runtime {
                     self.new_object(Object::Constructor { name: None, data: Vec::new() })
                 )
             },
+            Expression::Meta(inner) if self.meta => self.evaluate(*inner),
+            Expression::Meta(_) => panic!("meta expressions cannot be evaluated at runtime"),
         }
     }
 
@@ -186,7 +195,6 @@ impl Runtime {
         self.new_object(object)
     }
     
-    #[allow(unused)]
     fn deep_copy_object(&mut self, id: ObjectId) -> ObjectId {
         let object = match &self.objects.get(&id).expect("object to copy should exist").data {
             | obj @ Object::Int(_)
@@ -284,16 +292,16 @@ impl Runtime {
 
                 found
             },
+            Expression::Meta(inner) =>
+                // is this is the right thing to do? 
+                // TODO: change behaviour when implementing metatime closures
+                self.find_unbound_variables(inner, bound)
         }
     }
 
     fn add_builtin_function(&mut self, name: &'static str, handler: fn(&mut Runtime, Vec<ObjectId>) -> ObjectId) {
         let id = self.new_object(Object::BuiltinFunction { name, handler });
         
-        if self.scopes.len() == 0 {
-            self.scopes.push(HashMap::new());
-        }
-
         self.scopes
             .last_mut()
             .expect("current scope should exist")
@@ -303,11 +311,7 @@ impl Runtime {
 
 impl Program {
     pub fn interpret(self) {
-        let mut rt = Runtime {
-            scopes: Vec::new(),
-            objects: HashMap::new(),
-            next_id: 0,
-        };
+        let mut rt = Runtime::new(false);
         
         rt.add_builtin_function("dump", |rt, args| {
             print!("(");
@@ -319,6 +323,27 @@ impl Program {
             println!(")");
 
             rt.new_object(Object::Constructor { name: None, data: Vec::new() })
+        });
+        rt.add_builtin_function("clone", |rt, args| {
+            if args.len() != 1 {
+                panic!("invalid argument count while calling clone");
+            }
+
+            rt.deep_copy_object(args[0])
+        });
+        rt.add_builtin_function("add", |rt, args| {
+            if args.len() != 2 {
+                panic!("invalid argument count while calling clone");
+            }
+
+            let x = &rt.objects[&args[0]].data;
+            let y = &rt.objects[&args[1]].data;
+
+            match (x, y) {
+                (Object::Int(x), Object::Int(y)) =>
+                    rt.new_object(Object::Int(x+y)),
+                _ => panic!("type error: expected ints")
+            }
         });
 
         let id = rt.evaluate(Expression::Block {

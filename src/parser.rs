@@ -91,14 +91,25 @@ impl Parser {
         if TRACE { dbg!("statement", self.tokens.peek()); }
         
         match (self.tokens.peek()?.data.clone(), self.tokens.peek_nth(1)) {
-            (TokenData::Let, _) => Some(self.let_statement()?),
+            (TokenData::Let, _) => Some(self.let_statement(false)?),
             (TokenData::Identifier(_), Some(Token { data: TokenData::Assign, .. })) => self.assign_statement(),
+            (TokenData::Meta, Some(Token {data: TokenData::Let, ..})) => {
+                let _ = self.tokens.next();
+                self.let_statement(true)
+            }
             _ => Some(Statement::Expression(self.expression()?))
         }
     }
 
     fn expression(&mut self) -> Option<Expression> {
         if TRACE { dbg!("expression", self.tokens.peek().unwrap()); }
+
+        if let Some(Token{ data: TokenData::Meta, .. }) = self.tokens.peek() {
+            let _ = self.tokens.next();
+            let expr = Box::new(self.expression()?);
+
+            return Some(Expression::Meta(expr));
+        }
 
         let mut expr = match self.tokens.peek()?.data {
             TokenData::Fun => {self.fun_expression()},
@@ -189,7 +200,7 @@ impl Parser {
         self.expression()
     }
 
-    fn let_statement(&mut self) -> Option<Statement> {
+    fn let_statement(&mut self, meta: bool) -> Option<Statement> {
         if TRACE { dbg!("let_statement", self.tokens.peek().unwrap()); }
         expect!(self, TokenData::Let)?;
 
@@ -203,13 +214,17 @@ impl Parser {
 
         expect!(self, TokenData::Assign)?;
 
-        let value = self.expression()?;
+        let mut value = self.expression()?;
+        if meta {
+            value = Expression::Meta(Box::new(value));
+        }
+
         let value = Box::new(value);
 
         Some(Statement::Let {
             variable,
             annotation,
-            value
+            value,
         })
     }
 
