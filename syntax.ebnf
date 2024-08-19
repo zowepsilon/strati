@@ -36,6 +36,6 @@ fun_expression = "fun", "(",
            list(identifier, annotation), ")", 
            "->", expression, block_expression
 
-constructor = 
+constructor = ".", identifier?, ("(", list(expression), ")")?
 
 program = statements
