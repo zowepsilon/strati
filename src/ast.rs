@@ -25,6 +25,9 @@ pub enum ExpressionData {
         statements: Vec<Statement>
     },
     Meta(Box<Expression>),
+    BuiltinInt,
+    BuiltinString,
+    BuiltinType,
 }
 
 #[derive(Debug, Clone)]

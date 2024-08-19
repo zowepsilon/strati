@@ -32,13 +32,18 @@ struct ObjectCell {
 }
 
 #[derive(Debug)]
+struct MetaState {
+    scopes: Vec<HashMap<String, Expression>>,
+}
+
+#[derive(Debug)]
 struct Runtime {
     // a Runtime should only modify its bottom (current) scope
     // here scopes are lexical
     scopes: Vec<HashMap<String, ObjectId>>,
     objects: HashMap<ObjectId, ObjectCell>,
     next_id: ObjectId,
-    meta: bool,
+    meta_state: Option<MetaState>,
 }
 
 impl Runtime {
@@ -49,7 +54,13 @@ impl Runtime {
             scopes: vec![HashMap::new()],
             objects: HashMap::new(),
             next_id: 0,
-            meta,
+            meta_state: if meta {
+                Some(MetaState {
+                    scopes: vec![HashMap::new()],
+                })
+            } else {
+                None
+            },
         };
 
         this.new_object(Object::Constructor {
@@ -148,8 +159,12 @@ impl Runtime {
                 
                 last_value.unwrap_or(Runtime::UNIT)
             },
-            ExpressionData::Meta(inner) if self.meta => self.evaluate(*inner),
+            ExpressionData::Meta(inner) if self.meta_state.is_some() => self.evaluate(*inner),
             ExpressionData::Meta(_) => panic!("meta expressions cannot be evaluated at runtime"),
+            | ExpressionData::BuiltinInt
+            | ExpressionData::BuiltinType
+            | ExpressionData::BuiltinString => panic!("types cannot be evaluated at runtime"),
+
         }
     }
 
@@ -190,7 +205,10 @@ impl Runtime {
     ) -> HashSet<&'b String> {
         match &expr.data {
             | ExpressionData::IntLiteral(_)
-            | ExpressionData::StringLiteral(_) => HashSet::new(),
+            | ExpressionData::StringLiteral(_) 
+            | ExpressionData::BuiltinInt
+            | ExpressionData::BuiltinString
+            | ExpressionData::BuiltinType => HashSet::new(),
             ExpressionData::Identifier(name) => {
                 if bound.contains(&name) {
                     HashSet::new()
@@ -249,7 +267,7 @@ impl Runtime {
             ExpressionData::Meta(inner) =>
                 // is this is the right thing to do? 
                 // TODO: change behaviour when implementing metatime closures
-                self.find_unbound_variables(inner, bound)
+                self.find_unbound_variables(inner, bound),
         }
     }
 
@@ -264,7 +282,80 @@ impl Runtime {
 }
 
 // metatime methods
-impl Runtime { }
+#[allow(unused)]
+impl Runtime {
+    fn meta_evaluate(&mut self, expr: Expression) -> Expression {
+        match expr.data {
+            data @ ExpressionData::IntLiteral(_)    => Expression { data, type_: Some(Box::new(ExpressionData::BuiltinInt   .untyped())) },
+            data @ ExpressionData::StringLiteral(_) => Expression { data, type_: Some(Box::new(ExpressionData::BuiltinString.untyped())) },
+            ExpressionData::Identifier(name) => Expression {
+                type_: Some(Box::new(self.meta_get_type(&name))),
+                data: ExpressionData::Identifier(name),
+            },
+            ExpressionData::Constructor { name, data } => {
+                let data: Vec<_> = data.into_iter().map(|field| self.meta_evaluate(field)).collect();
+                let field_types = data.iter().map(|field|
+                    field.type_.as_deref().expect("fields should have been meta evaluated").clone()
+                ).collect();
+
+                Expression {
+                    data: ExpressionData::Constructor {
+                        name: name.clone(),
+                        data,
+                    },
+                    type_: Some(Box::new(ExpressionData::Constructor {
+                        name,
+                        data: field_types,
+                    }.untyped()))
+                }
+            },
+            ExpressionData::Fun { args, return_type, body } => todo!(), /*{
+                let args: Vec<_> = args.into_iter()
+                    .map(|(name, type_)| (name, self.evaluate(type_)))
+                    .collect()
+                ;
+
+                let to_bind = self.find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
+
+                let context: HashMap<_, _> = to_bind.into_iter()
+                    .map(|name| (
+                        name.clone(), 
+                        self.meta_get_type(name)
+                    ))
+                    .collect()
+                ;
+
+                self.meta_state.as_mut().expect("meta method called at runtime")
+                    .scopes
+                    .push(context)
+                ;
+
+                let current_scope = self.meta_state.as_mut().expect("meta method called at runtime")
+                    .scopes
+                    .last_mut().expect("current scope should exist");
+                for (name, type_) in args.iter() {
+                    current_scope.insert(name.clone(), type_);
+                }
+
+                todo!()
+            }, */
+            ExpressionData::Call { func, args } => todo!(),
+            ExpressionData::Block { statements } => todo!(),
+            ExpressionData::Meta(_) => todo!(),
+            | ExpressionData::BuiltinInt
+            | ExpressionData::BuiltinType
+            | ExpressionData::BuiltinString => todo!(),
+        }
+    }
+
+    fn meta_get_type(&self, name: &String) -> Expression {
+        self.meta_state.as_ref().expect("meta method called at runtime")
+            .scopes.last().expect("current scope should exist")
+            .get(name)
+            .unwrap_or_else(|| panic!("unknown variable {name}"))
+            .clone()
+    }
+}
 
 impl Program {
     pub fn interpret(self) {
