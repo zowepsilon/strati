@@ -220,8 +220,6 @@ impl Parser {
             value = ExpressionData::Meta(Box::new(value)).untyped();
         }
 
-        let value = Box::new(value);
-
         Some(Statement::Let {
             variable,
             annotation,

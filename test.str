@@ -5,7 +5,7 @@ let f = {
     }
 }
 
-let g = fun () {
+let g = fun () -> .MyInt(Int) {
     let y = 42
 
     f()
