@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::vec;
 
 use crate::lexer::{Token, TokenData};
@@ -262,6 +263,7 @@ impl Parser {
             args,
             return_type,
             body,
+            context: HashMap::new(),
         }.untyped())
     }
 

@@ -1,3 +1,23 @@
-let id = fun(x: .) { x }
+let y = 69
+let f = {
+    fun () -> .MyInt(Int) {
+        .MyInt(y)
+    }
+}
 
-id
+let g = fun () {
+    let y = 42
+
+    f()
+}
+
+let objects = fun() -> Int {
+    let x = 7
+
+    // dump(.hello(42, "wow"))
+        
+    x
+}
+
+objects()
+g()

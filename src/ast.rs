@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use crate::interpreter::Runtime;
+
 #[derive(Debug)]
 pub struct Program {
     pub root: Vec<Statement>,
@@ -16,6 +19,7 @@ pub enum ExpressionData {
         args: Vec<(String, Expression)>,
         return_type: Option<Box<Expression>>,
         body: Box<Expression>,
+        context: HashMap<String, Expression>,
     },
     Call {
         func: Box<Expression>,
@@ -28,6 +32,10 @@ pub enum ExpressionData {
     BuiltinInt,
     BuiltinString,
     BuiltinType,
+    BuiltinFunction {
+        name: &'static str,
+        handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
+    }
 }
 
 #[derive(Debug, Clone)]
