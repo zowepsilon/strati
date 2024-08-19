@@ -4,6 +4,7 @@ use crate::lexer::{Token, TokenData};
 use crate::ast::{
     Program,
     Expression, 
+    ExpressionData, 
     Statement, 
 };
 
@@ -92,7 +93,6 @@ impl Parser {
         
         match (self.tokens.peek()?.data.clone(), self.tokens.peek_nth(1)) {
             (TokenData::Let, _) => Some(self.let_statement(false)?),
-            (TokenData::Identifier(_), Some(Token { data: TokenData::Assign, .. })) => self.assign_statement(),
             (TokenData::Meta, Some(Token {data: TokenData::Let, ..})) => {
                 let _ = self.tokens.next();
                 self.let_statement(true)
@@ -108,7 +108,7 @@ impl Parser {
             let _ = self.tokens.next();
             let expr = Box::new(self.expression()?);
 
-            return Some(Expression::Meta(expr));
+            return Some(ExpressionData::Meta(expr).untyped());
         }
 
         let mut expr = match self.tokens.peek()?.data {
@@ -116,17 +116,17 @@ impl Parser {
             TokenData::Integer(_) => {
                 let Some(Token { data: TokenData::Integer(value), .. }) = self.tokens.next()
                     else { unreachable!("self.tokens was peeked successfully") };
-                Some(Expression::IntLiteral(value))
+                Some(ExpressionData::IntLiteral(value).untyped())
             },
             TokenData::String(_) => {
                 let Some(Token { data: TokenData::String(value), .. }) = self.tokens.next()
                     else { unreachable!("self.tokens was peeked successfully") };
-                Some(Expression::StringLiteral(value))
+                Some(ExpressionData::StringLiteral(value).untyped())
             },
             TokenData::Identifier(_) => {
                 let Some(Token { data: TokenData::Identifier(value), .. }) = self.tokens.next()
                     else { unreachable!("self.tokens was peeked successfully") };
-                Some(Expression::Identifier(value))
+                Some(ExpressionData::Identifier(value).untyped())
             },
             TokenData::ParenBlock(_) => {
                 let Some(Token { data: TokenData::ParenBlock(inner), .. }) = self.tokens.next()
@@ -154,10 +154,10 @@ impl Parser {
 
             let func = Box::new(expr);
 
-            expr = Expression::Call {
+            expr = ExpressionData::Call {
                 func,
                 args
-            };
+            }.untyped();
         }
 
         Some(expr)
@@ -169,7 +169,7 @@ impl Parser {
 
         let mut inner = Parser::new(inner);
 
-        Some(Expression::Block { statements: inner.statements()? })
+        Some(ExpressionData::Block { statements: inner.statements()? }.untyped())
     }
 
     fn statements(&mut self) -> Option<Vec<Statement>> {
@@ -216,7 +216,7 @@ impl Parser {
 
         let mut value = self.expression()?;
         if meta {
-            value = Expression::Meta(Box::new(value));
+            value = ExpressionData::Meta(Box::new(value)).untyped();
         }
 
         let value = Box::new(value);
@@ -225,20 +225,6 @@ impl Parser {
             variable,
             annotation,
             value,
-        })
-    }
-
-    fn assign_statement(&mut self) -> Option<Statement> {
-        let TokenData::Identifier(name) = self.tokens.next()?.data
-            else { return None };
-
-        expect!(self, TokenData::Assign)?;
-
-        let value = self.expression()?;
-
-        Some(Statement::Assign {
-            name,
-            value
         })
     }
 
@@ -272,11 +258,11 @@ impl Parser {
         let body = self.block_expression()?;
         let body = Box::new(body);
         
-        Some(Expression::Fun {
+        Some(ExpressionData::Fun {
             args,
             return_type,
             body,
-        })
+        }.untyped())
     }
 
     fn constructor(&mut self) -> Option<Expression> {
@@ -306,7 +292,7 @@ impl Parser {
             _ => Vec::new(),
         };
 
-        Some(Expression::Constructor { name, data } )
+        Some(ExpressionData::Constructor { name, data }.untyped())
     }
 
     fn newlines(&mut self) {

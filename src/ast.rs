@@ -4,7 +4,7 @@ pub struct Program {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub enum ExpressionData {
     IntLiteral(String),
     StringLiteral(String),
     Identifier(String),
@@ -28,6 +28,12 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
+pub struct Expression {
+    pub data: ExpressionData,
+    pub type_: Option<Box<Expression>>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Let {
         variable: String,
@@ -35,8 +41,13 @@ pub enum Statement {
         value: Box<Expression>,
     },
     Expression(Expression),
-    Assign {
-        name: String,
-        value: Expression,
+}
+
+impl ExpressionData {
+    pub fn untyped(self) -> Expression {
+        Expression {
+            data: self,
+            type_: None,
+        }
     }
 }

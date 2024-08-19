@@ -13,7 +13,6 @@ list(X) = newline*, ( X, newline*, (",", newline*, X, newline*)* )?, ","?, newli
 
 statement = expression
           | let_statement
-          | assign_statement
 
 expression = integer
            | string
@@ -23,6 +22,7 @@ expression = integer
            | expression, "(", list(expression), ")"
            | fun_expression
            | constructor
+           | "meta" expression
            // todo if
 
 block_expression = "{", statements, "}"
@@ -30,9 +30,7 @@ statements = newline*, (statement, newline)*, statement, newline?
 
 annotation = ":", expression
 
-let_statement = "let", identifier, annotation?, "=", expression
-
-assign_statement = identifier, "=", expression
+let_statement = "meta"?, "let", identifier, annotation?, "=", expression
 
 fun_expression = "fun", "(",
            list(identifier, annotation), ")", 

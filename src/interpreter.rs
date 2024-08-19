@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, HashSet}, iter};
 
-use crate::ast::{Expression, Program, Statement};
+use crate::ast::{Expression, ExpressionData, Program, Statement};
 
 type ObjectId = usize;
 
@@ -31,6 +31,7 @@ struct ObjectCell {
     count: usize,
 }
 
+#[derive(Debug)]
 struct Runtime {
     // a Runtime should only modify its bottom (current) scope
     // here scopes are lexical
@@ -41,27 +42,34 @@ struct Runtime {
 }
 
 impl Runtime {
+    const UNIT: ObjectId = 0;
+
     fn new(meta: bool) -> Runtime {
-        Runtime {
+        let mut this = Runtime {
             scopes: vec![HashMap::new()],
             objects: HashMap::new(),
             next_id: 0,
             meta,
-        }
+        };
+
+        this.new_object(Object::Constructor {
+            name: None,
+            data: Vec::new(),
+        });
+
+        this
     }
 }
 
 
+// runtime/common methods
 impl Runtime {
     fn evaluate(&mut self, expr: Expression) -> ObjectId {
-        match expr {
-            Expression::IntLiteral(i) => self.new_object( Object::Int(i.parse().expect("lexer should have validated string")) ),
-            Expression::StringLiteral(s) => self.new_object( Object::String(s) ),
-            Expression::Identifier(var) => {
-                let id = self.get_variable(&var);
-                self.shallow_copy_object(id)
-            },
-            Expression::Constructor { name, data } => {
+        match expr.data {
+            ExpressionData::IntLiteral(i) => self.new_object( Object::Int(i.parse().expect("lexer should have validated string")) ),
+            ExpressionData::StringLiteral(s) => self.new_object( Object::String(s) ),
+            ExpressionData::Identifier(var) => self.get_variable(&var),
+            ExpressionData::Constructor { name, data } => {
                 let data = data.into_iter()
                                .map(|e| self.evaluate(e))
                                .collect();
@@ -71,7 +79,7 @@ impl Runtime {
                     data,
                 })
             },
-            Expression::Fun { args, return_type: _, body } => {
+            ExpressionData::Fun { args, return_type: _, body } => {
                 let to_bind = self.find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
                 let context = to_bind.into_iter()
                     .map(|name| (
@@ -88,11 +96,11 @@ impl Runtime {
                     body: *body,
                 })
             },
-            Expression::Call { func, args: parameters } => {
+            ExpressionData::Call { func, args: parameters } => {
                 let func_id = self.evaluate(*func);
                 match self.objects[&func_id].data.clone() {
                     Object::Closure { context, args, body } => {
-                        let Expression::Block { statements } = body
+                        let ExpressionData::Block { statements } = body.data
                             else { panic!("the parser guarantees that the function body is a block") };
                         
                         let parameters: Vec<_> = parameters.into_iter()
@@ -116,10 +124,7 @@ impl Runtime {
                         
                         self.scopes.pop();
                         
-                        last_value.unwrap_or_else(||
-                            // " . " is the unit value
-                            self.new_object(Object::Constructor { name: None, data: Vec::new() })
-                        )
+                        last_value.unwrap_or(Runtime::UNIT)
                     },
                     Object::BuiltinFunction { handler, .. } => {
                         let parameters: Vec<_> = parameters.into_iter()
@@ -131,7 +136,7 @@ impl Runtime {
                     _ => panic!("type error: expected closure value")
                 }
             },
-            Expression::Block { statements } => {
+            ExpressionData::Block { statements } => {
                 self.scopes.push(self.scopes.last().cloned().unwrap_or_default());
                 
                 let mut last_value = None;
@@ -141,13 +146,10 @@ impl Runtime {
                 
                 self.scopes.pop();
                 
-                last_value.unwrap_or_else(||
-                    // " . " is the unit value
-                    self.new_object(Object::Constructor { name: None, data: Vec::new() })
-                )
+                last_value.unwrap_or(Runtime::UNIT)
             },
-            Expression::Meta(inner) if self.meta => self.evaluate(*inner),
-            Expression::Meta(_) => panic!("meta expressions cannot be evaluated at runtime"),
+            ExpressionData::Meta(inner) if self.meta => self.evaluate(*inner),
+            ExpressionData::Meta(_) => panic!("meta expressions cannot be evaluated at runtime"),
         }
     }
 
@@ -158,15 +160,6 @@ impl Runtime {
                 let value_id = self.evaluate(*value);
 
                 self.scopes.last_mut().expect("current scope should exist").insert(variable, value_id);
-
-                None
-            },
-            Statement::Assign { name, value } => {
-                let var_id = self.get_variable(&name);
-                let value_id = self.evaluate(value);
-                
-                let object = self.objects[&value_id].clone();
-                self.objects.get_mut(&var_id).map(|val| *val = object);
 
                 None
             },
@@ -190,60 +183,22 @@ impl Runtime {
         id
     }
 
-    fn shallow_copy_object(&mut self, id: ObjectId) -> ObjectId {
-        let object = self.objects.get(&id).expect("object to copy should exist").data.clone();
-        self.new_object(object)
-    }
-    
-    fn deep_copy_object(&mut self, id: ObjectId) -> ObjectId {
-        let object = match &self.objects.get(&id).expect("object to copy should exist").data {
-            | obj @ Object::Int(_)
-            | obj @ Object::String(_) => obj.clone(),
-            Object::Constructor { name, data } => {
-                let name = name.clone();
-                let data = data
-                    .clone()
-                    .into_iter()
-                    .map(|field| self.deep_copy_object(field))
-                    .collect()
-                ;
-
-                Object::Constructor { name, data }
-            },
-            Object::Closure { context, args, body } => {
-                let context = context.clone();
-                let args = args.clone();
-                let body = body.clone();
-
-                let context =
-                    context.into_iter()
-                    .map(|(name, id)| (name, self.deep_copy_object(id)))
-                    .collect();
-                
-                Object::Closure { context, args, body }
-            },
-            obj @ Object::BuiltinFunction{..} => obj.clone(),
-        };
-
-        self.new_object(object)
-    }
-
     fn find_unbound_variables<'a, 'b>(
         &'a self,
         expr: &'b Expression,
         bound: HashSet<&'b String>,
     ) -> HashSet<&'b String> {
-        match expr {
-            | Expression::IntLiteral(_)
-            | Expression::StringLiteral(_) => HashSet::new(),
-            Expression::Identifier(name) => {
+        match &expr.data {
+            | ExpressionData::IntLiteral(_)
+            | ExpressionData::StringLiteral(_) => HashSet::new(),
+            ExpressionData::Identifier(name) => {
                 if bound.contains(&name) {
                     HashSet::new()
                 } else {
                     HashSet::from([name])
                 }
             },
-            Expression::Constructor { name: _, data } => {
+            ExpressionData::Constructor { name: _, data } => {
                 let mut found = HashSet::new();
 
                 for field in data {
@@ -254,7 +209,7 @@ impl Runtime {
 
                 found
             },
-            Expression::Call { func, args } => {
+            ExpressionData::Call { func, args } => {
                 let mut found = self.find_unbound_variables(func, bound.clone());
 
                 for field in args {
@@ -265,7 +220,7 @@ impl Runtime {
 
                 found
             },
-            Expression::Fun { args, return_type: _, body } => {
+            ExpressionData::Fun { args, return_type: _, body } => {
                 let mut subbound = bound.clone();
                 for (arg_name, _) in args {
                     subbound.insert(arg_name);
@@ -273,7 +228,7 @@ impl Runtime {
 
                 self.find_unbound_variables(body, subbound)
             },
-            Expression::Block { statements } => {
+            ExpressionData::Block { statements } => {
                 let mut subbound = bound.clone();
                 let mut found = HashSet::new();
 
@@ -283,8 +238,7 @@ impl Runtime {
                             found.extend(self.find_unbound_variables(value, subbound.clone()));
                             subbound.insert(variable);
                         },
-                        | Statement::Expression(value)
-                        | Statement::Assign { name: _, value } => {
+                        Statement::Expression(value) => {
                             found.extend(self.find_unbound_variables(value, subbound.clone()));
                         },
                     }
@@ -292,7 +246,7 @@ impl Runtime {
 
                 found
             },
-            Expression::Meta(inner) =>
+            ExpressionData::Meta(inner) =>
                 // is this is the right thing to do? 
                 // TODO: change behaviour when implementing metatime closures
                 self.find_unbound_variables(inner, bound)
@@ -309,6 +263,9 @@ impl Runtime {
     }
 }
 
+// metatime methods
+impl Runtime { }
+
 impl Program {
     pub fn interpret(self) {
         let mut rt = Runtime::new(false);
@@ -321,19 +278,12 @@ impl Program {
             }
 
             println!(")");
-
-            rt.new_object(Object::Constructor { name: None, data: Vec::new() })
-        });
-        rt.add_builtin_function("clone", |rt, args| {
-            if args.len() != 1 {
-                panic!("invalid argument count while calling clone");
-            }
-
-            rt.deep_copy_object(args[0])
+            
+            Runtime::UNIT
         });
         rt.add_builtin_function("add", |rt, args| {
             if args.len() != 2 {
-                panic!("invalid argument count while calling clone");
+                panic!("invalid argument count while calling add");
             }
 
             let x = &rt.objects[&args[0]].data;
@@ -346,9 +296,21 @@ impl Program {
             }
         });
 
-        let id = rt.evaluate(Expression::Block {
-            statements: self.root,
+        rt.add_builtin_function("neg", |rt, args| {
+            if args.len() != 1 {
+                panic!("invalid argument count while calling neg");
+            }
+
+            match &rt.objects[&args[0]].data {
+                Object::Int(x) =>
+                    rt.new_object(Object::Int(-x)),
+                _ => panic!("type error: expected ints")
+            }
         });
+
+        let id = rt.evaluate(ExpressionData::Block {
+            statements: self.root,
+        }.untyped());
 
         println!("Returned {}", rt.objects[&id].data.fmt(&rt));
     }

@@ -292,7 +292,7 @@ impl Display for TokenData {
             TD::Fun => write!(f, "{}", "fun "),
             TD::Struct => write!(f, "{}", "struct "),
             TD::Underscore => write!(f, "{}", "_"),
-            TD::Meta => write!(f, "{}", "meta "),
+            TD::Meta => write!(f, "{}", "meta"),
             TD::NewLine => write!(f, "{}", "\n"),
             TD::ThinArrow => write!(f, "{}", " -> "),
             TD::Identifier(name) => write!(f, "{name} "),
