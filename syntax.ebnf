@@ -21,6 +21,7 @@ expression = integer
            | block_expression
            | expression, "(", list(expression), ")"
            | fun_expression
+           | fntype_expression
            | constructor
            | "meta" expression
            // todo if
@@ -35,6 +36,8 @@ let_statement = "meta"?, "let", identifier, annotation?, "=", expression
 fun_expression = "fun", "(",
            list(identifier, annotation), ")", 
            "->", expression, block_expression
+
+fntype_expression = "fn", "(", list(expression), ")", "->", expression
 
 constructor = ".", identifier?, ("(", list(expression), ")")?
 

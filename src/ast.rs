@@ -31,7 +31,7 @@ pub enum ExpressionData {
     Meta(Box<Expression>),
     FunType {
         args: Vec<Expression>,
-        return_type: Box<Expression>,
+        return_type: Option<Box<Expression>>,
     },
     // internal, non-unparsable expressions
     BuiltinInt,
@@ -80,6 +80,9 @@ impl std::fmt::Display for ExpressionData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ExpressionData as ED;
 
+        let indent = f.width().unwrap_or(0);
+        let offset = 4;
+
         match self {
             ED::IntLiteral(i) => write!(f, "{i}"),
             ED::StringLiteral(s) => write!(f, "\"{s}\""),
@@ -94,7 +97,7 @@ impl std::fmt::Display for ExpressionData {
                     write!(f, "(")?;
 
                     for field in data {
-                        write!(f, "{}, ", field.data)?;
+                        write!(f, "{:indent$}, ", field.data)?;
                     }
 
                     write!(f, ")")?;
@@ -102,15 +105,93 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             },
-            ED::Fun { args, return_type, body, context } => todo!(),
-            ED::Call { func, args } => todo!(),
-            ED::Block { statements } => todo!(),
-            ED::Meta(_) => todo!(),
-            ED::FunType { args, return_type } => todo!(),
+            ED::Fun { args, return_type, body, context } => {
+                write!(f, "fun (")?;
+                for (name, type_) in args {
+                    write!(f, "{}: {:indent$}, ", name, type_.data)?;
+                }
+                write!(f, ")")?;
+
+                if !context.is_empty() {
+                    write!(f, " [")?;
+                    for (name, value) in context {
+                        write!(f, "{name} = {:indent$}", value.data)?;
+                    }
+                    write!(f, "]")?;
+                }
+
+                match return_type {
+                    Some(ret) => write!(f, " -> {:indent$}", ret.data)?,
+                    None => (),
+                }
+
+                write!(f, " {:indent$}", body.data)?;
+
+                Ok(())
+            },
+            ED::Call { func, args } => {
+                write!(f, "{:indent$}(", func.data)?;
+
+                for arg in args {
+                    write!(f, "{:indent$}, ", arg.data)?;
+                }
+
+                write!(f, ")")?;
+
+                Ok(())
+            },
+            ED::Block { statements } => {
+                if statements.is_empty() {
+                    write!(f, "{{}}")
+                } else {
+                    write!(f, "{{")?;
+                    for stmt in statements {
+                        write!(f, "\n{: >indent$}{stmt:indent$}", "", indent = indent+offset)?;
+                    }
+                    write!(f, "\n{: >indent$}}}", "")?;
+
+                    Ok(())
+                }
+            },
+            ED::Meta(inner) => write!(f, "meta {:indent$}", inner.data),
+            ED::FunType { args, return_type } => {
+                write!(f, "fn(")?;
+                for arg in args {
+                    write!(f, "{:indent$}", arg.data)?;
+                }
+                write!(f, ")")?;
+
+                if let Some(ret) = return_type {
+                    write!(f, " -> {:indent$}", ret.data)?;
+                }
+
+                Ok(())
+            },
             ED::BuiltinInt => write!(f, "Int"),
             ED::BuiltinString => write!(f, "String"),
             ED::BuiltinType => write!(f, "Type"),
             ED::BuiltinFunction { name, handler: _ } => write!(f, "builtin function {name}"),
+        }
+    }
+}
+
+impl std::fmt::Display for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let indent = f.width().unwrap_or(0);
+
+        match self {
+            Statement::Let { variable, annotation, value } => {
+                write!(f, "let {variable}")?;
+                
+                if let Some(type_) = annotation {
+                    write!(f, ": {:indent$}", type_.data)?;
+                }
+
+                write!(f, " = {:indent$}", value.data)?;
+
+                Ok(())
+            },
+            Statement::Expression(expr) => write!(f, "{:indent$}", expr.data),
         }
     }
 }

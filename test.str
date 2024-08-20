@@ -11,7 +11,7 @@ let g = fun () -> .MyInt(Int) {
     f()
 }
 
-let objects = fun() -> Int {
+let objects: fn() -> Int = fun() -> Int {
     let x = 7
 
     // dump(.hello(42, "wow"))

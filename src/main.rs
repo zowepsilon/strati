@@ -18,6 +18,10 @@ fn main() {
     
     let program = Parser::new(tokens).parse().expect("parsing error");
     
+    // for stmt in program.root {
+    //     println!("{stmt}");
+    // }
+    
     program.interpret();
 
     // println!("{typed_program:#?}");

@@ -113,7 +113,8 @@ impl Parser {
         }
 
         let mut expr = match self.tokens.peek()?.data {
-            TokenData::Fun => {self.fun_expression()},
+            TokenData::Fn => self.fntype_expression(),
+            TokenData::Fun => self.fun_expression(),
             TokenData::Integer(_) => {
                 let Some(Token { data: TokenData::Integer(value), .. }) = self.tokens.next()
                     else { unreachable!("self.tokens was peeked successfully") };
@@ -262,6 +263,35 @@ impl Parser {
             return_type,
             body,
             context: HashMap::new(),
+        }.untyped())
+    }
+
+    fn fntype_expression(&mut self) -> Option<Expression> {
+        if TRACE { dbg!("fun_expression", self.tokens.peek()); }
+
+        expect!(self, TokenData::Fn)?;
+
+        let Some(Token { data: TokenData::ParenBlock(inner), .. }) = self.tokens.next()
+            else { return None };
+
+        let mut inner = Parser::new(inner);
+
+        let args = list!(inner, {
+            inner.expression()?
+        }, sep: TokenData::Comma);
+        
+        let return_type = match self.tokens.peek() {
+            Some(Token{ data: TokenData::ThinArrow, .. }) => {
+                let _ = self.tokens.next();
+
+                Some(Box::new(self.expression()?))
+            },
+            _ => None,
+        };
+
+        Some(ExpressionData::FunType {
+            args,
+            return_type,
         }.untyped())
     }
 

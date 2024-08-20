@@ -130,7 +130,8 @@ impl Runtime {
             ExpressionData::Meta(inner) if self.meta_state.is_some() => self.evaluate(*inner),
             ExpressionData::FunType {args, return_type} => {
                 let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
-                let return_type = Box::new(self.evaluate(*return_type));
+                let return_type = return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                let return_type = Some(Box::new(self.evaluate(*return_type)));
 
                 Expression {
                     data: ExpressionData::FunType { args, return_type },
@@ -259,7 +260,7 @@ impl Runtime {
                     found.extend(subfound.into_iter());
                 }
                 
-                found.extend(self.find_unbound_variables(return_type, bound));
+                found.extend(self.find_unbound_variables(return_type.as_ref().expect("expression should have return type"), bound));
                 found
             },
         }
@@ -407,7 +408,7 @@ impl Runtime {
                     },
                     type_: Some(Box::new(ExpressionData::FunType {
                         args: arg_types,
-                        return_type: Box::new(return_type),
+                        return_type: Some(Box::new(return_type)),
                     }.untyped())),
                 }
             },
@@ -426,7 +427,7 @@ impl Runtime {
                         }
 
                         Expression {
-                            type_: Some(return_type.clone()),
+                            type_: Some(return_type.as_ref().expect("function should have return type").clone()),
                             data: ExpressionData::Call {
                                 func: Box::new(func),
                                 args: parameters,
@@ -605,7 +606,8 @@ impl ExpressionData {
                     other_arg.data.is_subtype_of(&self_arg.data)
                 })
                 // functions are covariant w.r.t their return type
-                && self_ret.data.is_subtype_of(&other_ret.data),
+                && self_ret.as_ref().expect("self should have return type").data
+                    .is_subtype_of(&other_ret.as_ref().expect("self should have return type").data),
             (ED::BuiltinInt, ED::BuiltinInt) => true,
             (ED::BuiltinString, ED::BuiltinString) => true,
             _ => false
@@ -634,7 +636,7 @@ impl ExpressionData {
                 data.iter().all(|field| ExpressionData::is_type(&field.data)),
             ED::FunType { args, return_type } =>
                 args.iter().all(|arg| ExpressionData::is_type(&arg.data))
-                && return_type.data.is_type(),
+                && return_type.as_ref().expect("self should have return type").data.is_type(),
         }
     }
 }
