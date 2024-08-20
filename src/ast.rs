@@ -28,7 +28,7 @@ pub enum ExpressionData {
     Block {
         statements: Vec<Statement>
     },
-    Meta(Box<Expression>),
+    Const(Box<Expression>),
     FunType {
         args: Vec<Expression>,
         return_type: Option<Box<Expression>>,
@@ -153,7 +153,7 @@ impl std::fmt::Display for ExpressionData {
                     Ok(())
                 }
             },
-            ED::Meta(inner) => write!(f, "meta {:indent$}", inner.data),
+            ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
             ED::FunType { args, return_type } => {
                 write!(f, "fn(")?;
                 for arg in args {

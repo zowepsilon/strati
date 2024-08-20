@@ -24,7 +24,7 @@ pub enum TokenData {
     Fn,
     Struct,
     Underscore,
-    Meta,
+    Const,
 
     // specials
     NewLine,
@@ -102,7 +102,7 @@ impl<'a> Lexer<'a> {
                         "fn" => TokenData::Fn,
                         "struct" => TokenData::Struct,
                         "_" => TokenData::Underscore,
-                        "meta" => TokenData::Meta,
+                        "const" => TokenData::Const,
                         _ => TokenData::Identifier(content),
                     },
                     pos: start_position,
@@ -295,7 +295,7 @@ impl Display for TokenData {
             TD::Fn => write!(f, "{}", "fn "),
             TD::Struct => write!(f, "{}", "struct "),
             TD::Underscore => write!(f, "{}", "_"),
-            TD::Meta => write!(f, "{}", "meta"),
+            TD::Const => write!(f, "{}", "const"),
             TD::NewLine => write!(f, "{}", "\n"),
             TD::ThinArrow => write!(f, "{}", " -> "),
             TD::Identifier(name) => write!(f, "{name} "),

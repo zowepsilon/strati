@@ -94,7 +94,7 @@ impl Parser {
         
         match (self.tokens.peek()?.data.clone(), self.tokens.peek_nth(1)) {
             (TokenData::Let, _) => Some(self.let_statement(false)?),
-            (TokenData::Meta, Some(Token {data: TokenData::Let, ..})) => {
+            (TokenData::Const, Some(Token {data: TokenData::Let, ..})) => {
                 let _ = self.tokens.next();
                 self.let_statement(true)
             }
@@ -105,11 +105,11 @@ impl Parser {
     fn expression(&mut self) -> Option<Expression> {
         if TRACE { dbg!("expression", self.tokens.peek().unwrap()); }
 
-        if let Some(Token{ data: TokenData::Meta, .. }) = self.tokens.peek() {
+        if let Some(Token{ data: TokenData::Const, .. }) = self.tokens.peek() {
             let _ = self.tokens.next();
             let expr = Box::new(self.expression()?);
 
-            return Some(ExpressionData::Meta(expr).untyped());
+            return Some(ExpressionData::Const(expr).untyped());
         }
 
         let mut expr = match self.tokens.peek()?.data {
@@ -202,7 +202,7 @@ impl Parser {
         self.expression()
     }
 
-    fn let_statement(&mut self, meta: bool) -> Option<Statement> {
+    fn let_statement(&mut self, is_const: bool) -> Option<Statement> {
         if TRACE { dbg!("let_statement", self.tokens.peek().unwrap()); }
         expect!(self, TokenData::Let)?;
 
@@ -217,8 +217,8 @@ impl Parser {
         expect!(self, TokenData::Assign)?;
 
         let mut value = self.expression()?;
-        if meta {
-            value = ExpressionData::Meta(Box::new(value)).untyped();
+        if is_const {
+            value = ExpressionData::Const(Box::new(value)).untyped();
         }
 
         Some(Statement::Let {

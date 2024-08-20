@@ -6,7 +6,7 @@ use std::{
 use crate::ast::{Expression, ExpressionData, Program, Statement};
 
 #[derive(Debug)]
-struct MetaState {
+struct ConstState {
     scopes: Vec<HashMap<String, Expression>>,
 }
 
@@ -15,15 +15,15 @@ pub struct Runtime {
     // a Runtime should only modify its bottom (current) scope
     // here scopes are lexical
     scopes: Vec<HashMap<String, Expression>>,
-    meta_state: Option<MetaState>,
+    const_state: Option<ConstState>,
 }
 
 impl Runtime {
-    fn new(meta: bool) -> Runtime {
+    fn new(is_const: bool) -> Runtime {
         Runtime {
             scopes: vec![HashMap::new()],
-            meta_state: if meta {
-                Some(MetaState {
+            const_state: if is_const {
+                Some(ConstState {
                     scopes: vec![HashMap::new()],
                 })
             } else {
@@ -127,7 +127,7 @@ impl Runtime {
 
                 last_value.unwrap_or_else(|| ExpressionData::unit().untyped())
             }
-            ExpressionData::Meta(inner) if self.meta_state.is_some() => self.evaluate(*inner),
+            ExpressionData::Const(inner) if self.const_state.is_some() => self.evaluate(*inner),
             ExpressionData::FunType {args, return_type} => {
                 let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
                 let return_type = return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
@@ -138,7 +138,7 @@ impl Runtime {
                     type_: expr.type_,
                 }
             },
-            ExpressionData::Meta(_) => panic!("meta expressions cannot be evaluated at runtime"),
+            ExpressionData::Const(_) => panic!("const expressions cannot be evaluated at runtime"),
             ExpressionData::BuiltinInt
             | ExpressionData::BuiltinType
             | ExpressionData::BuiltinString => panic!("types cannot be evaluated at runtime"),
@@ -250,7 +250,7 @@ impl Runtime {
 
                 found
             }
-            ExpressionData::Meta(inner) => self.find_unbound_variables(inner, bound),
+            ExpressionData::Const(inner) => self.find_unbound_variables(inner, bound),
             ExpressionData::FunType { args, return_type } => {
                 let mut found = HashSet::new();
 
@@ -285,7 +285,7 @@ impl Runtime {
     }
 }
 
-// metatime methods
+// const time methods
 impl Runtime {
     fn meta_type(&mut self, expr: Expression) -> Expression {
         match expr.data {
@@ -361,15 +361,15 @@ impl Runtime {
                     .collect()
                 ;
                 
-                self.meta_state.as_mut().expect("meta method called at runtime")
+                self.const_state.as_mut().expect("const method called at runtime")
                     .scopes
                     .push(context.clone());
                 
-                // code in non-meta function bodies executed at meta time have block-like scoping
+                // code in non-const function bodies executed at const time have block-like scoping
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
 
-                let current_scope = self.meta_state.as_mut().expect("meta method called at runtime")
+                let current_scope = self.const_state.as_mut().expect("const method called at runtime")
                     .scopes
                     .last_mut().expect("current scope should exist")
                 ;
@@ -387,7 +387,7 @@ impl Runtime {
                     last_type = type_;
                 }
 
-                self.meta_state.as_mut().expect("meta method called at runtime")
+                self.const_state.as_mut().expect("const method called at runtime")
                     .scopes.pop();
 
                 self.scopes.pop();
@@ -439,15 +439,15 @@ impl Runtime {
             },
             ExpressionData::Block { statements } => {
                 let context =
-                    self.meta_state.as_mut().expect("meta method called at runtime")
+                    self.const_state.as_mut().expect("const method called at runtime")
                         .scopes
                         .last().expect("current scope should exist")
                         .clone();
 
-                self.meta_state.as_mut().expect("meta method called at runtime")
+                self.const_state.as_mut().expect("const method called at runtime")
                     .scopes.push(context);
                 
-                // code in non-meta function bodies executed at meta time have block-like scoping
+                // code in non-const function bodies executed at const time have block-like scoping
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
 
@@ -460,7 +460,7 @@ impl Runtime {
                     last_type = type_;
                 }
 
-                self.meta_state.as_mut().expect("meta method called at runtime").scopes.pop();
+                self.const_state.as_mut().expect("const method called at runtime").scopes.pop();
                 self.scopes.pop();
                 
                 let return_type = last_type.unwrap_or_else(||
@@ -472,7 +472,7 @@ impl Runtime {
                     type_: Some(Box::new(return_type))
                 }
             },
-            ExpressionData::Meta(inner) => self.evaluate(*inner),
+            ExpressionData::Const(inner) => self.evaluate(*inner),
             data @ (
                 | ExpressionData::BuiltinInt
                 | ExpressionData::BuiltinType
@@ -490,12 +490,12 @@ impl Runtime {
     }
 
     fn meta_get_type(&self, name: &String) -> Expression {
-        self.meta_state.as_ref().expect("meta method called at runtime")
+        self.const_state.as_ref().expect("const method called at runtime")
             .scopes.last().expect("current scope should exist")
             .get(name).unwrap_or_else(|| panic!("unknown variable {name}"))
             .clone()
     }
-
+    
     fn meta_type_statement(&mut self, stmt: Statement) -> (Statement, Option<Expression>) {
         match stmt {
             Statement::Expression(expr) => {
@@ -516,7 +516,7 @@ impl Runtime {
                                 .is_subtype_of(&annotation.data)
                         );
 
-                        self.meta_state.as_mut().expect("meta method called at runtime")
+                        self.const_state.as_mut().expect("const method called at runtime")
                             .scopes.last_mut().expect("current scope should exist")
                             .insert(variable.clone(), annotation.clone());
 
@@ -534,7 +534,7 @@ impl Runtime {
                         let value = self.meta_type(value);
                         let type_ = value.type_.clone().expect("value should have been typed");
 
-                        self.meta_state.as_mut().expect("meta method called at runtime")
+                        self.const_state.as_mut().expect("const method called at runtime")
                             .scopes.last_mut().expect("current scope should exist")
                             .insert(variable.clone(), *type_.clone());
 
@@ -582,7 +582,7 @@ impl ExpressionData {
             | (ED::Identifier(_), _) | (_, ED::Identifier(_))
             | (ED::Call{..}, _)      | (_, ED::Call{..})
             | (ED::Block{..}, _)     | (_, ED::Block{..})
-            | (ED::Meta(_), _)       | (_, ED::Meta(_))
+            | (ED::Const(_), _)       | (_, ED::Const(_))
                 => panic!("unevaluated expression while checking subtyping"),
             | (ED::IntLiteral(_), _)       | (_, ED::IntLiteral(_))
             | (ED::StringLiteral(_), _)    | (_, ED::StringLiteral(_))
@@ -621,7 +621,7 @@ impl ExpressionData {
             | ED::Identifier(_)
             | ED::Call{..}
             | ED::Block{..}
-            | ED::Meta(_)
+            | ED::Const(_)
                 => panic!("unevaluated expression while checking subtyping"),
             | ED::IntLiteral(_)
             | ED::StringLiteral(_)
