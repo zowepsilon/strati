@@ -3,7 +3,7 @@ use std::{
     iter,
 };
 
-use crate::ast::{Expression, ExpressionData, Program, Statement};
+use crate::ast::{BindingKind, Expression, ExpressionData, Program, Statement};
 
 #[derive(Debug)]
 struct ConstState {
@@ -17,6 +17,8 @@ pub struct Runtime {
     scopes: Vec<HashMap<String, Expression>>,
     const_state: Option<ConstState>,
 }
+
+const TRACE: bool = false;
 
 impl Runtime {
     fn new(is_const: bool) -> Runtime {
@@ -82,8 +84,9 @@ impl Runtime {
                     body,
                     context,
                 } => {
-                    let ExpressionData::Block { statements } = body.data
-                        else { panic!("the parser guarantees that the function body is a block") };
+                    let ExpressionData::Block { statements } = body.data else {
+                        panic!("the parser guarantees that the function body is a block")
+                    };
 
                     let parameters: Vec<_> =
                         parameters.into_iter().map(|p| self.evaluate(p)).collect();
@@ -128,17 +131,21 @@ impl Runtime {
                 last_value.unwrap_or_else(|| ExpressionData::unit().untyped())
             }
             ExpressionData::Const(inner) if self.const_state.is_some() => self.evaluate(*inner),
-            ExpressionData::FunType {args, return_type} => {
+            ExpressionData::FunType { args, return_type } => {
                 let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
-                let return_type = return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                let return_type =
+                    return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
                 let return_type = Some(Box::new(self.evaluate(*return_type)));
 
                 Expression {
                     data: ExpressionData::FunType { args, return_type },
                     type_: expr.type_,
                 }
-            },
-            ExpressionData::Const(_) => panic!("const expressions cannot be evaluated at runtime"),
+            }
+            ExpressionData::Const(inner) => panic!(
+                "const expression const {} cannot be evaluated at runtime",
+                inner.data
+            ),
             ExpressionData::BuiltinInt
             | ExpressionData::BuiltinType
             | ExpressionData::BuiltinString => panic!("types cannot be evaluated at runtime"),
@@ -148,17 +155,18 @@ impl Runtime {
     fn run_statement(&mut self, stmt: Statement) -> Option<Expression> {
         match stmt {
             Statement::Expression(expr) => Some(self.evaluate(expr)),
-            Statement::Let {
+            Statement::Binding {
+                kind: _,
                 variable,
                 annotation: _,
                 value,
             } => {
-                let value_id = self.evaluate(value);
+                let value = self.evaluate(value);
 
                 self.scopes
                     .last_mut()
                     .expect("current scope should exist")
-                    .insert(variable, value_id);
+                    .insert(variable, value);
 
                 None
             }
@@ -234,7 +242,8 @@ impl Runtime {
 
                 for stmt in statements {
                     match stmt {
-                        Statement::Let {
+                        Statement::Binding {
+                            kind: _,
                             variable,
                             annotation: _,
                             value,
@@ -259,10 +268,17 @@ impl Runtime {
 
                     found.extend(subfound.into_iter());
                 }
-                
-                found.extend(self.find_unbound_variables(return_type.as_ref().expect("expression should have return type"), bound));
+
+                found.extend(
+                    self.find_unbound_variables(
+                        return_type
+                            .as_ref()
+                            .expect("expression should have return type"),
+                        bound,
+                    ),
+                );
                 found
-            },
+            }
         }
     }
 
@@ -288,6 +304,8 @@ impl Runtime {
 // const time methods
 impl Runtime {
     fn meta_type(&mut self, expr: Expression) -> Expression {
+        if TRACE { eprintln!("meta_type: {}", expr.data); }
+
         match expr.data {
             data @ ExpressionData::IntLiteral(_) => Expression {
                 data,
@@ -335,49 +353,49 @@ impl Runtime {
                 args,
                 return_type,
                 body,
-                context: _,
+                context,
             } => {
-                let ExpressionData::Block { statements } = body.data.clone()
-                        else { panic!("the parser guarantees that the function body is a block") };
+                let ExpressionData::Block { statements } = body.data.clone() else {
+                    panic!("the parser guarantees that the function body is a block")
+                };
 
-                let args: Vec<_> = args.into_iter()
+                let args: Vec<_> = args
+                    .into_iter()
                     .map(|(name, type_)| {
                         let type_ = self.evaluate(type_);
                         assert!(type_.data.is_type());
 
                         (name, type_)
                     })
-                    .collect()
-                ;
+                    .collect();
                 let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
 
-                let to_bind = self.find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
+                let last_typing_scope =
+                    self.const_state.as_ref().expect("const method called at runtime")
+                        .scopes.last().cloned().unwrap_or_default();
 
-                let context: HashMap<_, _> = to_bind.into_iter()
-                    .map(|name| (
-                        name.clone(),
-                        self.meta_get_type(name)
-                    ))
-                    .collect()
-                ;
-                
-                self.const_state.as_mut().expect("const method called at runtime")
+                self.const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
                     .scopes
-                    .push(context.clone());
-                
+                    .push(last_typing_scope);
+
                 // code in non-const function bodies executed at const time have block-like scoping
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
 
-                let current_scope = self.const_state.as_mut().expect("const method called at runtime")
+                let current_scope = self
+                    .const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
                     .scopes
-                    .last_mut().expect("current scope should exist")
-                ;
+                    .last_mut()
+                    .expect("current scope should exist");
 
                 for (name, type_) in args.iter() {
                     current_scope.insert(name.clone(), type_.clone());
                 }
-                
+
                 let mut typed_statements = Vec::new();
                 let mut last_type = None;
                 for stmt in statements {
@@ -387,66 +405,111 @@ impl Runtime {
                     last_type = type_;
                 }
 
-                self.const_state.as_mut().expect("const method called at runtime")
-                    .scopes.pop();
-
+                self.const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
+                    .scopes
+                    .pop();
                 self.scopes.pop();
-                
-                let found_return_type = last_type.unwrap_or_else(|| ExpressionData::unit().untyped());
 
-                let return_type = *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                let found_return_type =
+                    last_type.unwrap_or_else(|| ExpressionData::unit().untyped());
+
+                let return_type =
+                    *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
                 let return_type = self.evaluate(return_type);
 
                 assert!(found_return_type.data.is_subtype_of(&return_type.data));
 
+                let body = Expression {
+                    data: ExpressionData::Block {
+                        statements: typed_statements,
+                    },
+                    type_: Some(Box::new(return_type.clone())),
+                };
+
                 Expression {
                     data: ExpressionData::Fun {
                         args,
-                        return_type: None,
-                        body,
+                        return_type: Some(Box::new(return_type.clone())),
+                        body: Box::new(body),
                         context,
                     },
-                    type_: Some(Box::new(ExpressionData::FunType {
-                        args: arg_types,
-                        return_type: Some(Box::new(return_type)),
-                    }.untyped())),
+                    type_: Some(Box::new(
+                        ExpressionData::FunType {
+                            args: arg_types,
+                            return_type: Some(Box::new(return_type)),
+                        }
+                        .untyped(),
+                    )),
                 }
-            },
-            ExpressionData::Call { func, args: parameters } => {
+            }
+            ExpressionData::Call {
+                func,
+                args: parameters,
+            } => {
                 let func = self.meta_type(*func);
-                let parameters: Vec<_> = parameters.into_iter().map(|arg| self.meta_type(arg)).collect();
+                let parameters: Vec<_> = parameters
+                    .into_iter()
+                    .map(|arg| self.meta_type(arg))
+                    .collect();
 
-                match &func.type_.as_ref().expect("func should have been typed").data {
+                match &func
+                    .type_
+                    .as_ref()
+                    .expect("func should have been typed")
+                    .data
+                {
                     ExpressionData::FunType { args, return_type } => {
                         assert_eq!(args.len(), parameters.len(), "invalid argument count");
 
                         for (arg, param) in iter::zip(args, parameters.iter()) {
-                            let param_type = &param.type_.as_ref().expect("parameters should be typed").data;
+                            let param_type = &param
+                                .type_
+                                .as_ref()
+                                .expect("parameters should be typed")
+                                .data;
 
-                            assert!(param_type.is_subtype_of(&arg.data), "{:?} is not a subtype of {:?}", param_type, arg.data);
+                            assert!(
+                                param_type.is_subtype_of(&arg.data),
+                                "{:?} is not a subtype of {:?}",
+                                param_type,
+                                arg.data
+                            );
                         }
 
                         Expression {
-                            type_: Some(return_type.as_ref().expect("function should have return type").clone()),
+                            type_: Some(
+                                return_type
+                                    .as_ref()
+                                    .expect("function should have return type")
+                                    .clone(),
+                            ),
                             data: ExpressionData::Call {
                                 func: Box::new(func),
                                 args: parameters,
                             },
                         }
-                    },
+                    }
                     other => panic!("type error: cannot call {other:?}"),
                 }
-            },
+            }
             ExpressionData::Block { statements } => {
-                let context =
-                    self.const_state.as_mut().expect("const method called at runtime")
-                        .scopes
-                        .last().expect("current scope should exist")
-                        .clone();
+                let context = self
+                    .const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
+                    .scopes
+                    .last()
+                    .expect("current scope should exist")
+                    .clone();
 
-                self.const_state.as_mut().expect("const method called at runtime")
-                    .scopes.push(context);
-                
+                self.const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
+                    .scopes
+                    .push(context);
+
                 // code in non-const function bodies executed at const time have block-like scoping
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
@@ -460,113 +523,224 @@ impl Runtime {
                     last_type = type_;
                 }
 
-                self.const_state.as_mut().expect("const method called at runtime").scopes.pop();
+                self.const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
+                    .scopes
+                    .pop();
                 self.scopes.pop();
-                
-                let return_type = last_type.unwrap_or_else(||
-                    ExpressionData::unit().untyped()
-                );
+
+                let return_type = last_type.unwrap_or_else(|| ExpressionData::unit().untyped());
 
                 Expression {
-                    data: ExpressionData::Block { statements: typed_statements },
-                    type_: Some(Box::new(return_type))
+                    data: ExpressionData::Block {
+                        statements: typed_statements,
+                    },
+                    type_: Some(Box::new(return_type)),
                 }
+            }
+            ExpressionData::Const(inner) => {
+                let inner = self.evaluate(*inner);
+
+                self.meta_type(inner)
+            }
+            data @ (ExpressionData::BuiltinInt
+            | ExpressionData::BuiltinType
+            | ExpressionData::BuiltinString
+            | ExpressionData::FunType { .. }) => Expression {
+                data,
+                type_: Some(Box::new(ExpressionData::BuiltinType.untyped())),
             },
-            ExpressionData::Const(inner) => self.evaluate(*inner),
-            data @ (
-                | ExpressionData::BuiltinInt
-                | ExpressionData::BuiltinType
-                | ExpressionData::BuiltinString
-                | ExpressionData::FunType{..}
-            ) => Expression { data, type_: Some(Box::new(ExpressionData::BuiltinType.untyped())) },
             data @ ExpressionData::BuiltinFunction { .. } => {
-                assert!(expr.type_.as_ref().is_some_and(|type_| type_.data.is_type()));
+                assert!(expr
+                    .type_
+                    .as_ref()
+                    .is_some_and(|type_| type_.data.is_type()));
                 Expression {
                     data,
-                    type_: expr.type_
+                    type_: expr.type_,
                 }
-            },
+            }
         }
     }
 
     fn meta_get_type(&self, name: &String) -> Expression {
-        self.const_state.as_ref().expect("const method called at runtime")
-            .scopes.last().expect("current scope should exist")
-            .get(name).unwrap_or_else(|| panic!("unknown variable {name}"))
+        self.const_state
+            .as_ref()
+            .expect("const method called at runtime")
+            .scopes
+            .last()
+            .expect("current scope should exist")
+            .get(name)
+            .unwrap_or_else(|| panic!("unknown variable {name}"))
             .clone()
     }
-    
+
     fn meta_type_statement(&mut self, stmt: Statement) -> (Statement, Option<Expression>) {
         match stmt {
             Statement::Expression(expr) => {
                 let expr = self.meta_type(expr);
-                let type_ = expr.type_.clone().expect("expression should have been typed");
+                let type_ = expr
+                    .type_
+                    .clone()
+                    .expect("expression should have been typed");
 
                 (Statement::Expression(expr), Some(*type_))
             }
-            Statement::Let { variable, annotation, value } => {
-                match annotation {
-                    Some(annotation) => {
+            Statement::Binding {
+                kind: BindingKind::Let,
+                variable,
+                annotation,
+                value,
+            } => match annotation {
+                Some(annotation) => {
+                    let annotation = self.evaluate(annotation);
+                    let value = self.meta_type(value);
 
-                        let annotation = self.evaluate(annotation);
-                        let value = self.meta_type(value);
+                    assert!(value
+                        .type_
+                        .as_ref()
+                        .expect("value should have been typed")
+                        .data
+                        .is_subtype_of(&annotation.data));
 
-                        assert!(
-                            value.type_.as_ref().expect("value should have been typed").data
-                                .is_subtype_of(&annotation.data)
-                        );
+                    self.const_state
+                        .as_mut()
+                        .expect("const method called at runtime")
+                        .scopes
+                        .last_mut()
+                        .expect("current scope should exist")
+                        .insert(variable.clone(), annotation.clone());
 
-                        self.const_state.as_mut().expect("const method called at runtime")
-                            .scopes.last_mut().expect("current scope should exist")
-                            .insert(variable.clone(), annotation.clone());
+                    let stmt = Statement::Binding {
+                        kind: BindingKind::Let,
+                        variable,
+                        annotation: Some(annotation.clone()),
+                        value,
+                    };
 
+                    (stmt, None)
+                },
+                None => {
+                    let value = self.meta_type(value);
+                    let type_ = value.type_.clone().expect("value should have been typed");
 
-                        let stmt = Statement::Let {
-                            variable,
-                            annotation: Some(annotation.clone()),
-                            value,
-                        };
+                    self.const_state
+                        .as_mut()
+                        .expect("const method called at runtime")
+                        .scopes
+                        .last_mut()
+                        .expect("current scope should exist")
+                        .insert(variable.clone(), *type_);
 
-                        (stmt, Some(annotation))
+                    let stmt = Statement::Binding {
+                        kind: BindingKind::Let,
+                        variable,
+                        annotation: None,
+                        value,
+                    };
 
-                    },
-                    None => {
-                        let value = self.meta_type(value);
-                        let type_ = value.type_.clone().expect("value should have been typed");
-
-                        self.const_state.as_mut().expect("const method called at runtime")
-                            .scopes.last_mut().expect("current scope should exist")
-                            .insert(variable.clone(), *type_.clone());
-
-                        let stmt = Statement::Let {
-                            variable,
-                            annotation: None,
-                            value
-                        };
-
-                        (stmt, Some(*type_))
-                    }
-                }
+                    (stmt, None)
+                },
             },
+
+            Statement::Binding {
+                kind: BindingKind::Const,
+                variable,
+                annotation,
+                value,
+            } => match annotation {
+                Some(annotation) => {
+                    let annotation = self.evaluate(annotation);
+                    let value = self.evaluate(value);
+                    let value = self.meta_type(value);
+
+                    self.const_state
+                        .as_mut()
+                        .expect("const method called at runtime")
+                        .scopes
+                        .last_mut()
+                        .expect("current scope should exist")
+                        .insert(variable.clone(), annotation.clone());
+
+                    self.scopes
+                        .last_mut()
+                        .expect("current scope should exist")
+                        .insert(variable.clone(), value.clone());
+
+                    let stmt = Statement::Binding {
+                        kind: BindingKind::Const,
+                        variable,
+                        annotation: Some(annotation.clone()),
+                        value,
+                    };
+
+                    (stmt, None)
+                },
+                None => {
+                    let value = self.evaluate(value);
+                    let value = self.meta_type(value);
+                    let type_ = value.type_.clone().expect("value should have been typed");
+
+                    self.const_state
+                        .as_mut()
+                        .expect("const method called at runtime")
+                        .scopes
+                        .last_mut()
+                        .expect("current scope should exist")
+                        .insert(variable.clone(), *type_);
+
+                    self.scopes
+                        .last_mut()
+                        .expect("current scope should exist")
+                        .insert(variable.clone(), value.clone());
+
+                    let stmt = Statement::Binding {
+                        kind: BindingKind::Const,
+                        variable,
+                        annotation: None,
+                        value,
+                    };
+
+                    (stmt, None)
+                },
+            }
         }
     }
 }
 
 impl Program {
     pub fn interpret(self) {
-        let root = ExpressionData::Block { statements: self.root }.untyped();
-        
+        let root = ExpressionData::Block {
+            statements: self.root,
+        }
+        .untyped();
+
         let mut meta_rt = Runtime::new(true);
-        
-        meta_rt.scopes.last_mut().expect("root scope should exist")
-               .insert("Int".to_string(), ExpressionData::BuiltinInt.untyped());
-        meta_rt.scopes.last_mut().expect("root scope should exist")
-               .insert("String".to_string(), ExpressionData::BuiltinString.untyped());
-        meta_rt.scopes.last_mut().expect("root scope should exist")
-               .insert("Type".to_string(), ExpressionData::BuiltinType.untyped());
+
+        meta_rt
+            .scopes
+            .last_mut()
+            .expect("root scope should exist")
+            .insert("Int".to_string(), ExpressionData::BuiltinInt.untyped());
+        meta_rt
+            .scopes
+            .last_mut()
+            .expect("root scope should exist")
+            .insert(
+                "String".to_string(),
+                ExpressionData::BuiltinString.untyped(),
+            );
+        meta_rt
+            .scopes
+            .last_mut()
+            .expect("root scope should exist")
+            .insert("Type".to_string(), ExpressionData::BuiltinType.untyped());
 
         let root = meta_rt.meta_type(root);
-        
+
+        //println!("root = {}", root.data);
+
         let mut rt = Runtime::new(false);
         let ret = rt.evaluate(root);
 
@@ -579,38 +753,62 @@ impl ExpressionData {
         use ExpressionData as ED;
 
         match (self, other) {
-            | (ED::Identifier(_), _) | (_, ED::Identifier(_))
-            | (ED::Call{..}, _)      | (_, ED::Call{..})
-            | (ED::Block{..}, _)     | (_, ED::Block{..})
-            | (ED::Const(_), _)       | (_, ED::Const(_))
-                => panic!("unevaluated expression while checking subtyping"),
-            | (ED::IntLiteral(_), _)       | (_, ED::IntLiteral(_))
-            | (ED::StringLiteral(_), _)    | (_, ED::StringLiteral(_))
-            | (ED::BuiltinFunction{..}, _) | (_, ED::BuiltinFunction{..})
-            | (ED::Fun{..}, _)             | (_, ED::Fun{..})
-                => panic!("type error: not a type"),
+            (ED::Identifier(_), _)
+            | (_, ED::Identifier(_))
+            | (ED::Call { .. }, _)
+            | (_, ED::Call { .. })
+            | (ED::Block { .. }, _)
+            | (_, ED::Block { .. })
+            | (ED::Const(_), _)
+            | (_, ED::Const(_)) => panic!("unevaluated expression while checking subtyping"),
+            (ED::IntLiteral(_), _)
+            | (_, ED::IntLiteral(_))
+            | (ED::StringLiteral(_), _)
+            | (_, ED::StringLiteral(_))
+            | (ED::BuiltinFunction { .. }, _)
+            | (_, ED::BuiltinFunction { .. })
+            | (ED::Fun { .. }, _)
+            | (_, ED::Fun { .. }) => panic!("type error: not a type"),
             (_, ED::BuiltinType) if self.is_type() => true,
-            (ED::Constructor { name: self_name,  data: self_data },
-             ED::Constructor { name: other_name, data: other_data })
-                => self_name == other_name
-                && self_data.len() == other_data.len()
-                && iter::zip(self_data, other_data).all(|(self_field, other_field)| {
-                    // constructors are covariant w.r.t their fields
-                    self_field.data.is_subtype_of(&other_field.data)
-                }),
-            (ED::FunType { args: self_args,  return_type: self_ret  },
-             ED::FunType { args: other_args, return_type: other_ret })
-                => self_args.len() == other_args.len()
+            (
+                ED::Constructor {
+                    name: self_name,
+                    data: self_data,
+                },
+                ED::Constructor {
+                    name: other_name,
+                    data: other_data,
+                },
+            ) => {
+                self_name == other_name
+                    && self_data.len() == other_data.len()
+                    && iter::zip(self_data, other_data).all(|(self_field, other_field)| {
+                        // constructors are covariant w.r.t their fields
+                        self_field.data.is_subtype_of(&other_field.data)
+                    })
+            }
+            (
+                ED::FunType {
+                    args: self_args,
+                    return_type: self_ret,
+                },
+                ED::FunType {
+                    args: other_args,
+                    return_type: other_ret,
+                },
+            ) => {
+                self_args.len() == other_args.len()
                 && iter::zip(self_args, other_args).all(|(self_arg, other_arg)| {
                     // functions are contravariant w.r.t their arguments
                     other_arg.data.is_subtype_of(&self_arg.data)
                 })
                 // functions are covariant w.r.t their return type
                 && self_ret.as_ref().expect("self should have return type").data
-                    .is_subtype_of(&other_ret.as_ref().expect("self should have return type").data),
+                    .is_subtype_of(&other_ret.as_ref().expect("self should have return type").data)
+            }
             (ED::BuiltinInt, ED::BuiltinInt) => true,
             (ED::BuiltinString, ED::BuiltinString) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -618,25 +816,25 @@ impl ExpressionData {
         use ExpressionData as ED;
 
         match self {
-            | ED::Identifier(_)
-            | ED::Call{..}
-            | ED::Block{..}
-            | ED::Const(_)
-                => panic!("unevaluated expression while checking subtyping"),
-            | ED::IntLiteral(_)
+            ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Const(_) => {
+                panic!("unevaluated expression while checking subtyping")
+            }
+            ED::IntLiteral(_)
             | ED::StringLiteral(_)
-            | ED::BuiltinFunction{..}
-            | ED::Fun{..}
-                => false,
-            | ED::BuiltinInt
-            | ED::BuiltinString
-            | ED::BuiltinType
-                => true,
-            ED::Constructor { name: _, data } =>
-                data.iter().all(|field| ExpressionData::is_type(&field.data)),
-            ED::FunType { args, return_type } =>
+            | ED::BuiltinFunction { .. }
+            | ED::Fun { .. } => false,
+            ED::BuiltinInt | ED::BuiltinString | ED::BuiltinType => true,
+            ED::Constructor { name: _, data } => data
+                .iter()
+                .all(|field| ExpressionData::is_type(&field.data)),
+            ED::FunType { args, return_type } => {
                 args.iter().all(|arg| ExpressionData::is_type(&arg.data))
-                && return_type.as_ref().expect("self should have return type").data.is_type(),
+                    && return_type
+                        .as_ref()
+                        .expect("self should have return type")
+                        .data
+                        .is_type()
+            }
         }
     }
 }

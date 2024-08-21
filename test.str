@@ -1,21 +1,26 @@
-let y = 69
-let f = {
-    fun () -> .MyInt(Int) {
+const let y = 69
+const let f = {
+    fun() -> .MyInt(Int) {
         .MyInt(y)
     }
 }
 
-let g = fun () -> .MyInt(Int) {
+let g = fun() -> .MyInt(Int) {
     let y = 42
 
     f()
 }
 
+const { f() }
+
+
 let objects: fn() -> Int = fun() -> Int {
     const let x = 7
-
+    const let y = x
     // dump(.hello(42, "wow"))
-        
+    
+    const { f() }
+
     x
 }
 

@@ -3,10 +3,7 @@ use std::vec;
 
 use crate::lexer::{Token, TokenData};
 use crate::ast::{
-    Program,
-    Expression, 
-    ExpressionData, 
-    Statement, 
+    BindingKind, Expression, ExpressionData, Program, Statement 
 };
 
 
@@ -93,10 +90,10 @@ impl Parser {
         if TRACE { dbg!("statement", self.tokens.peek()); }
         
         match (self.tokens.peek()?.data.clone(), self.tokens.peek_nth(1)) {
-            (TokenData::Let, _) => Some(self.let_statement(false)?),
+            (TokenData::Let, _) => Some(self.let_statement(BindingKind::Let)?),
             (TokenData::Const, Some(Token {data: TokenData::Let, ..})) => {
                 let _ = self.tokens.next();
-                self.let_statement(true)
+                self.let_statement(BindingKind::Const)
             }
             _ => Some(Statement::Expression(self.expression()?))
         }
@@ -202,7 +199,7 @@ impl Parser {
         self.expression()
     }
 
-    fn let_statement(&mut self, is_const: bool) -> Option<Statement> {
+    fn let_statement(&mut self, kind: BindingKind) -> Option<Statement> {
         if TRACE { dbg!("let_statement", self.tokens.peek().unwrap()); }
         expect!(self, TokenData::Let)?;
 
@@ -216,12 +213,10 @@ impl Parser {
 
         expect!(self, TokenData::Assign)?;
 
-        let mut value = self.expression()?;
-        if is_const {
-            value = ExpressionData::Const(Box::new(value)).untyped();
-        }
+        let value = self.expression()?;
 
-        Some(Statement::Let {
+        Some(Statement::Binding {
+            kind,
             variable,
             annotation,
             value,

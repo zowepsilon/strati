@@ -50,9 +50,16 @@ pub struct Expression {
     pub type_: Option<Box<Expression>>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum BindingKind {
+    Let,
+    Const,
+}
+
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Let {
+    Binding {
+        kind: BindingKind,
         variable: String,
         annotation: Option<Expression>,
         value: Expression,
@@ -115,14 +122,13 @@ impl std::fmt::Display for ExpressionData {
                 if !context.is_empty() {
                     write!(f, " [")?;
                     for (name, value) in context {
-                        write!(f, "{name} = {:indent$}", value.data)?;
+                        write!(f, "{name}: {:indent$}", value.data)?;
                     }
                     write!(f, "]")?;
                 }
 
-                match return_type {
-                    Some(ret) => write!(f, " -> {:indent$}", ret.data)?,
-                    None => (),
+                if let Some(ret) = return_type {
+                    write!(f, " -> {:indent$}", ret.data)?;
                 }
 
                 write!(f, " {:indent$}", body.data)?;
@@ -180,8 +186,14 @@ impl std::fmt::Display for Statement {
         let indent = f.width().unwrap_or(0);
 
         match self {
-            Statement::Let { variable, annotation, value } => {
-                write!(f, "let {variable}")?;
+            Statement::Binding { kind, variable, annotation, value } => {
+
+                match kind {
+                    BindingKind::Let => write!(f, "let")?,
+                    BindingKind::Const => write!(f, "const")?,
+                }
+
+                write!(f, " {variable}")?;
                 
                 if let Some(type_) = annotation {
                     write!(f, ": {:indent$}", type_.data)?;
