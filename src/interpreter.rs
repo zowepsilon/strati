@@ -50,28 +50,37 @@ impl Runtime {
                     data: ExpressionData::Constructor { name, data },
                     type_: expr.type_,
                 }
-            }
+            },
             ExpressionData::Fun {
+                is_const,
                 args,
                 return_type,
                 body,
                 context: _,
             } => {
-                let to_bind =
-                    self.find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
-                let context = to_bind
-                    .into_iter()
-                    .map(|name| (name.clone(), self.get_variable(name)))
-                    .collect();
+                if is_const && self.const_state.is_none() {
+                    ExpressionData::BuiltinFunction {
+                        name: "const_only",
+                        handler: |_rt, _args| panic!("attempted to call const-only function at runtime")
+                    }.untyped()
+                } else {
+                    let to_bind =
+                        self.find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
+                    let context = to_bind
+                        .into_iter()
+                        .map(|name| (name.clone(), self.get_variable(name)))
+                        .collect();
 
-                Expression {
-                    data: ExpressionData::Fun {
-                        args,
-                        return_type,
-                        body,
-                        context,
-                    },
-                    type_: expr.type_,
+                    Expression {
+                        data: ExpressionData::Fun {
+                            is_const,
+                            args,
+                            return_type,
+                            body,
+                            context,
+                        },
+                        type_: expr.type_,
+                    }
                 }
             }
             ExpressionData::Call {
@@ -79,11 +88,14 @@ impl Runtime {
                 args: parameters,
             } => match self.evaluate(*func).data {
                 ExpressionData::Fun {
+                    is_const,
                     args,
                     return_type: _,
                     body,
                     context,
                 } => {
+                    assert!(self.const_state.is_some() || !is_const, "cannot call const-only function at runtime");
+
                     let ExpressionData::Block { statements } = body.data else {
                         panic!("the parser guarantees that the function body is a block")
                     };
@@ -131,14 +143,14 @@ impl Runtime {
                 last_value.unwrap_or_else(|| ExpressionData::unit().untyped())
             }
             ExpressionData::Const(inner) if self.const_state.is_some() => self.evaluate(*inner),
-            ExpressionData::FunType { args, return_type } => {
+            ExpressionData::FunType { is_const, args, return_type } => {
                 let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
                 let return_type =
                     return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
                 let return_type = Some(Box::new(self.evaluate(*return_type)));
 
                 Expression {
-                    data: ExpressionData::FunType { args, return_type },
+                    data: ExpressionData::FunType { is_const, args, return_type },
                     type_: expr.type_,
                 }
             }
@@ -224,6 +236,7 @@ impl Runtime {
                 found
             }
             ExpressionData::Fun {
+                is_const: _,
                 args,
                 return_type: _,
                 body,
@@ -260,7 +273,7 @@ impl Runtime {
                 found
             }
             ExpressionData::Const(inner) => self.find_unbound_variables(inner, bound),
-            ExpressionData::FunType { args, return_type } => {
+            ExpressionData::FunType { is_const: _, args, return_type } => {
                 let mut found = HashSet::new();
 
                 for field in args {
@@ -282,6 +295,7 @@ impl Runtime {
         }
     }
 
+    #[allow(unused)] // TODO: remove this
     fn add_builtin_function(
         &mut self,
         name: &'static str,
@@ -303,8 +317,8 @@ impl Runtime {
 
 // const time methods
 impl Runtime {
-    fn meta_type(&mut self, expr: Expression) -> Expression {
-        if TRACE { eprintln!("meta_type: {}", expr.data); }
+    fn type_expression(&mut self, expr: Expression) -> Expression {
+        if TRACE { eprintln!("type_expression: {}", expr.data); }
 
         match expr.data {
             data @ ExpressionData::IntLiteral(_) => Expression {
@@ -316,13 +330,13 @@ impl Runtime {
                 type_: Some(Box::new(ExpressionData::BuiltinString.untyped())),
             },
             ExpressionData::Identifier(name) => Expression {
-                type_: Some(Box::new(self.meta_get_type(&name))),
+                type_: Some(Box::new(self.get_type_of_variable(&name))),
                 data: ExpressionData::Identifier(name),
             },
             ExpressionData::Constructor { name, data } => {
                 let data: Vec<_> = data
                     .into_iter()
-                    .map(|field| self.meta_type(field))
+                    .map(|field| self.type_expression(field))
                     .collect();
                 let field_types = data
                     .iter()
@@ -350,12 +364,13 @@ impl Runtime {
                 }
             }
             ExpressionData::Fun {
+                is_const,
                 args,
                 return_type,
                 body,
                 context,
             } => {
-                let ExpressionData::Block { statements } = body.data.clone() else {
+                let ExpressionData::Block { statements } = body.data else {
                     panic!("the parser guarantees that the function body is a block")
                 };
 
@@ -399,7 +414,7 @@ impl Runtime {
                 let mut typed_statements = Vec::new();
                 let mut last_type = None;
                 for stmt in statements {
-                    let (stmt, type_) = self.meta_type_statement(stmt);
+                    let (stmt, type_) = self.type_statement(stmt);
 
                     typed_statements.push(stmt);
                     last_type = type_;
@@ -430,6 +445,7 @@ impl Runtime {
 
                 Expression {
                     data: ExpressionData::Fun {
+                        is_const,
                         args,
                         return_type: Some(Box::new(return_type.clone())),
                         body: Box::new(body),
@@ -437,6 +453,7 @@ impl Runtime {
                     },
                     type_: Some(Box::new(
                         ExpressionData::FunType {
+                            is_const,
                             args: arg_types,
                             return_type: Some(Box::new(return_type)),
                         }
@@ -448,11 +465,7 @@ impl Runtime {
                 func,
                 args: parameters,
             } => {
-                let func = self.meta_type(*func);
-                let parameters: Vec<_> = parameters
-                    .into_iter()
-                    .map(|arg| self.meta_type(arg))
-                    .collect();
+                let func = self.type_expression(*func);
 
                 match &func
                     .type_
@@ -460,7 +473,12 @@ impl Runtime {
                     .expect("func should have been typed")
                     .data
                 {
-                    ExpressionData::FunType { args, return_type } => {
+                    ExpressionData::FunType { is_const: false, args, return_type } => {
+                        let parameters: Vec<_> = parameters
+                            .into_iter()
+                            .map(|arg| self.type_expression(arg))
+                            .collect();
+
                         assert_eq!(args.len(), parameters.len(), "invalid argument count");
 
                         for (arg, param) in iter::zip(args, parameters.iter()) {
@@ -490,6 +508,14 @@ impl Runtime {
                                 args: parameters,
                             },
                         }
+                    },
+                    ExpressionData::FunType { is_const: true, .. } => {
+                        let result = self.evaluate(ExpressionData::Call {
+                            func: Box::new(func),
+                            args: parameters,
+                        }.untyped());
+
+                        self.type_expression(result)
                     }
                     other => panic!("type error: cannot call {other:?}"),
                 }
@@ -517,7 +543,7 @@ impl Runtime {
                 let mut typed_statements = Vec::new();
                 let mut last_type = None;
                 for stmt in statements {
-                    let (stmt, type_) = self.meta_type_statement(stmt);
+                    let (stmt, type_) = self.type_statement(stmt);
 
                     typed_statements.push(stmt);
                     last_type = type_;
@@ -542,7 +568,7 @@ impl Runtime {
             ExpressionData::Const(inner) => {
                 let inner = self.evaluate(*inner);
 
-                self.meta_type(inner)
+                self.type_expression(inner)
             }
             data @ (ExpressionData::BuiltinInt
             | ExpressionData::BuiltinType
@@ -564,7 +590,7 @@ impl Runtime {
         }
     }
 
-    fn meta_get_type(&self, name: &String) -> Expression {
+    fn get_type_of_variable(&self, name: &String) -> Expression {
         self.const_state
             .as_ref()
             .expect("const method called at runtime")
@@ -576,10 +602,10 @@ impl Runtime {
             .clone()
     }
 
-    fn meta_type_statement(&mut self, stmt: Statement) -> (Statement, Option<Expression>) {
+    fn type_statement(&mut self, stmt: Statement) -> (Statement, Option<Expression>) {
         match stmt {
             Statement::Expression(expr) => {
-                let expr = self.meta_type(expr);
+                let expr = self.type_expression(expr);
                 let type_ = expr
                     .type_
                     .clone()
@@ -595,7 +621,7 @@ impl Runtime {
             } => match annotation {
                 Some(annotation) => {
                     let annotation = self.evaluate(annotation);
-                    let value = self.meta_type(value);
+                    let value = self.type_expression(value);
 
                     assert!(value
                         .type_
@@ -622,7 +648,7 @@ impl Runtime {
                     (stmt, None)
                 },
                 None => {
-                    let value = self.meta_type(value);
+                    let value = self.type_expression(value);
                     let type_ = value.type_.clone().expect("value should have been typed");
 
                     self.const_state
@@ -653,7 +679,7 @@ impl Runtime {
                 Some(annotation) => {
                     let annotation = self.evaluate(annotation);
                     let value = self.evaluate(value);
-                    let value = self.meta_type(value);
+                    let value = self.type_expression(value);
 
                     self.const_state
                         .as_mut()
@@ -679,7 +705,7 @@ impl Runtime {
                 },
                 None => {
                     let value = self.evaluate(value);
-                    let value = self.meta_type(value);
+                    let value = self.type_expression(value);
                     let type_ = value.type_.clone().expect("value should have been typed");
 
                     self.const_state
@@ -737,9 +763,9 @@ impl Program {
             .expect("root scope should exist")
             .insert("Type".to_string(), ExpressionData::BuiltinType.untyped());
 
-        let root = meta_rt.meta_type(root);
+        let root = meta_rt.type_expression(root);
 
-        //println!("root = {}", root.data);
+        println!("{}", root.data);
 
         let mut rt = Runtime::new(false);
         let ret = rt.evaluate(root);
@@ -789,15 +815,20 @@ impl ExpressionData {
             }
             (
                 ED::FunType {
+                    is_const: self_is_const,
                     args: self_args,
                     return_type: self_ret,
                 },
                 ED::FunType {
+                    is_const: other_is_const,
                     args: other_args,
                     return_type: other_ret,
                 },
             ) => {
-                self_args.len() == other_args.len()
+                   (!self_is_const || *other_is_const)  // non const-only functions can also be used at const time
+                                                        // i.e. fn(T) -> U <: const fn(T) -> U
+                                                        // this works because there are no runtime-only features
+                && self_args.len() == other_args.len()
                 && iter::zip(self_args, other_args).all(|(self_arg, other_arg)| {
                     // functions are contravariant w.r.t their arguments
                     other_arg.data.is_subtype_of(&self_arg.data)
@@ -827,7 +858,7 @@ impl ExpressionData {
             ED::Constructor { name: _, data } => data
                 .iter()
                 .all(|field| ExpressionData::is_type(&field.data)),
-            ED::FunType { args, return_type } => {
+            ED::FunType { is_const: _, args, return_type } => {
                 args.iter().all(|arg| ExpressionData::is_type(&arg.data))
                     && return_type
                         .as_ref()

@@ -91,8 +91,7 @@ impl Parser {
         
         match (self.tokens.peek()?.data.clone(), self.tokens.peek_nth(1)) {
             (TokenData::Let, _) => Some(self.let_statement(BindingKind::Let)?),
-            (TokenData::Const, Some(Token {data: TokenData::Let, ..})) => {
-                let _ = self.tokens.next();
+            (TokenData::Const, Some(Token {data: TokenData::Identifier(_), ..})) => {
                 self.let_statement(BindingKind::Const)
             }
             _ => Some(Statement::Expression(self.expression()?))
@@ -102,16 +101,9 @@ impl Parser {
     fn expression(&mut self) -> Option<Expression> {
         if TRACE { dbg!("expression", self.tokens.peek().unwrap()); }
 
-        if let Some(Token{ data: TokenData::Const, .. }) = self.tokens.peek() {
-            let _ = self.tokens.next();
-            let expr = Box::new(self.expression()?);
-
-            return Some(ExpressionData::Const(expr).untyped());
-        }
-
         let mut expr = match self.tokens.peek()?.data {
-            TokenData::Fn => self.fntype_expression(),
-            TokenData::Fun => self.fun_expression(),
+            TokenData::Fn => self.fntype_expression(false),
+            TokenData::Fun => self.fun_expression(false),
             TokenData::Integer(_) => {
                 let Some(Token { data: TokenData::Integer(value), .. }) = self.tokens.next()
                     else { unreachable!("self.tokens was peeked successfully") };
@@ -135,8 +127,17 @@ impl Parser {
                 let expr = inner.expression()?;
                 Some(expr)
             },
-            TokenData::BraceBlock(_) => self.block_expression(),
+            TokenData::BraceBlock(_) => self.block(),
             TokenData::Dot => self.constructor(),
+            TokenData::Const => {
+                let _ = self.tokens.next();
+                match self.tokens.peek()?.data {
+                    TokenData::BraceBlock(_) => Some(ExpressionData::Const(Box::new(self.block()?)).untyped()),
+                    TokenData::Fun => self.fun_expression(true),
+                    TokenData::Fn => self.fntype_expression(true),
+                    _ => None,
+                }
+            }
             _ => None
         }?;
 
@@ -162,7 +163,7 @@ impl Parser {
         Some(expr)
     }
 
-    fn block_expression(&mut self) -> Option<Expression> {
+    fn block(&mut self) -> Option<Expression> {
         let Some(Token { data: TokenData::BraceBlock(inner), .. }) = self.tokens.next()
             else { return None };
 
@@ -201,7 +202,11 @@ impl Parser {
 
     fn let_statement(&mut self, kind: BindingKind) -> Option<Statement> {
         if TRACE { dbg!("let_statement", self.tokens.peek().unwrap()); }
-        expect!(self, TokenData::Let)?;
+
+        match kind {
+            BindingKind::Let => expect!(self, TokenData::Let)?,
+            BindingKind::Const => expect!(self, TokenData::Const)?,
+        }
 
         let Some(Token { data: TokenData::Identifier(variable), .. }) = self.tokens.next()
             else { return None };
@@ -223,7 +228,7 @@ impl Parser {
         })
     }
 
-    fn fun_expression(&mut self) -> Option<Expression> {
+    fn fun_expression(&mut self, is_const: bool) -> Option<Expression> {
         if TRACE { dbg!("fun_expression", self.tokens.peek()); }
         expect!(self, TokenData::Fun)?;
 
@@ -250,10 +255,11 @@ impl Parser {
             _ => None,
         };
 
-        let body = self.block_expression()?;
+        let body = self.block()?;
         let body = Box::new(body);
         
         Some(ExpressionData::Fun {
+            is_const,
             args,
             return_type,
             body,
@@ -261,7 +267,7 @@ impl Parser {
         }.untyped())
     }
 
-    fn fntype_expression(&mut self) -> Option<Expression> {
+    fn fntype_expression(&mut self, is_const: bool) -> Option<Expression> {
         if TRACE { dbg!("fun_expression", self.tokens.peek()); }
 
         expect!(self, TokenData::Fn)?;
@@ -285,6 +291,7 @@ impl Parser {
         };
 
         Some(ExpressionData::FunType {
+            is_const,
             args,
             return_type,
         }.untyped())

@@ -1,5 +1,5 @@
-const let y = 69
-const let f = {
+const y = 69
+const f = {
     fun() -> .MyInt(Int) {
         .MyInt(y)
     }
@@ -13,13 +13,21 @@ let g = fun() -> .MyInt(Int) {
 
 const { f() }
 
+const identity = const fun(x: .) -> . { x }
+
+//const id = const fun (T: Type) -> . {
+//    fun (x: T) -> T { x }
+//}
+
 
 let objects: fn() -> Int = fun() -> Int {
-    const let x = 7
-    const let y = x
+    const x = 7
+    const y = x
     // dump(.hello(42, "wow"))
     
     const { f() }
+
+    identity(.Thing(42))
 
     x
 }

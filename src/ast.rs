@@ -16,6 +16,7 @@ pub enum ExpressionData {
         data: Vec<Expression>,
     },
     Fun {
+        is_const: bool,
         args: Vec<(String, Expression)>,
         return_type: Option<Box<Expression>>,
         body: Box<Expression>,
@@ -30,6 +31,7 @@ pub enum ExpressionData {
     },
     Const(Box<Expression>),
     FunType {
+        is_const: bool,
         args: Vec<Expression>,
         return_type: Option<Box<Expression>>,
     },
@@ -37,11 +39,10 @@ pub enum ExpressionData {
     BuiltinInt,
     BuiltinString,
     BuiltinType,
-    #[allow(unused)] // TODO: remove this
     BuiltinFunction {
         name: &'static str,
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
-    }
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -112,7 +113,11 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             },
-            ED::Fun { args, return_type, body, context } => {
+            ED::Fun { is_const, args, return_type, body, context } => {
+                if *is_const {
+                    write!(f, "const ")?;
+                }
+
                 write!(f, "fun (")?;
                 for (name, type_) in args {
                     write!(f, "{}: {:indent$}, ", name, type_.data)?;
@@ -160,7 +165,11 @@ impl std::fmt::Display for ExpressionData {
                 }
             },
             ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
-            ED::FunType { args, return_type } => {
+            ED::FunType { is_const, args, return_type } => {
+                if *is_const {
+                    write!(f, "const ")?;
+                }
+
                 write!(f, "fn(")?;
                 for arg in args {
                     write!(f, "{:indent$}", arg.data)?;

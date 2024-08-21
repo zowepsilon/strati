@@ -5,7 +5,7 @@ letter = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" |
        | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
 
 identifier = (letter | "_"), (letter | digit | "_")*
-integer = digit*
+integer = digit+
 string = '"' ? ANY ? '"'
 newline = "\n"
 
@@ -18,22 +18,23 @@ expression = integer
            | string
            | identifier
            | "(", newline*, expression, newline*, ")"
-           | block_expression
+           | block
            | expression, "(", list(expression), ")"
            | fun_expression
            | fntype_expression
            | constructor
-           | "meta" expression
+           | "const" block
            // todo if
 
-block_expression = "{", statements, "}"
+block = "{", statements, "}"
 statements = newline*, (statement, newline)*, statement, newline?
 
 annotation = ":", expression
 
-let_statement = "meta"?, "let", identifier, annotation?, "=", expression
+let_statement = "let", identifier, annotation?, "=", expression
+const_statement = "const", identifier, annotation?, "=", expression
 
-fun_expression = "fun", "(",
+fun_expression = "const"?, "fun", "(",
            list(identifier, annotation), ")", 
            "->", expression, block_expression
 
