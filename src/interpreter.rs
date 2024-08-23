@@ -50,7 +50,7 @@ impl Runtime {
                     data: ExpressionData::Constructor { name, data },
                     type_: expr.type_,
                 }
-            },
+            }
             ExpressionData::Fun {
                 is_const,
                 args,
@@ -61,11 +61,14 @@ impl Runtime {
                 if is_const && self.const_state.is_none() {
                     ExpressionData::BuiltinFunction {
                         name: "const_only",
-                        handler: |_rt, _args| panic!("attempted to call const-only function at runtime")
-                    }.untyped()
+                        handler: |_rt, _args| {
+                            panic!("attempted to call const-only function at runtime")
+                        },
+                    }
+                    .untyped()
                 } else {
                     let to_bind =
-                        self.find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
+                        find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
                     let context = to_bind
                         .into_iter()
                         .map(|name| (name.clone(), self.get_variable(name)))
@@ -94,7 +97,10 @@ impl Runtime {
                     body,
                     context,
                 } => {
-                    assert!(self.const_state.is_some() || !is_const, "cannot call const-only function at runtime");
+                    assert!(
+                        self.const_state.is_some() || !is_const,
+                        "cannot call const-only function at runtime"
+                    );
 
                     let ExpressionData::Block { statements } = body.data else {
                         panic!("the parser guarantees that the function body is a block")
@@ -143,14 +149,22 @@ impl Runtime {
                 last_value.unwrap_or_else(|| ExpressionData::unit().untyped())
             }
             ExpressionData::Const(inner) if self.const_state.is_some() => self.evaluate(*inner),
-            ExpressionData::FunType { is_const, args, return_type } => {
+            ExpressionData::FunType {
+                is_const,
+                args,
+                return_type,
+            } => {
                 let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
                 let return_type =
                     return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
                 let return_type = Some(Box::new(self.evaluate(*return_type)));
 
                 Expression {
-                    data: ExpressionData::FunType { is_const, args, return_type },
+                    data: ExpressionData::FunType {
+                        is_const,
+                        args,
+                        return_type,
+                    },
                     type_: expr.type_,
                 }
             }
@@ -194,107 +208,6 @@ impl Runtime {
             .clone()
     }
 
-    fn find_unbound_variables<'a, 'b>(
-        &'a self,
-        expr: &'b Expression,
-        bound: HashSet<&'b String>,
-    ) -> HashSet<&'b String> {
-        match &expr.data {
-            ExpressionData::IntLiteral(_)
-            | ExpressionData::StringLiteral(_)
-            | ExpressionData::BuiltinFunction { .. }
-            | ExpressionData::BuiltinInt
-            | ExpressionData::BuiltinString
-            | ExpressionData::BuiltinType => HashSet::new(),
-            ExpressionData::Identifier(name) => {
-                if bound.contains(&name) {
-                    HashSet::new()
-                } else {
-                    HashSet::from([name])
-                }
-            }
-            ExpressionData::Constructor { name: _, data } => {
-                let mut found = HashSet::new();
-
-                for field in data {
-                    let subfound = self.find_unbound_variables(field, bound.clone());
-
-                    found.extend(subfound.into_iter());
-                }
-
-                found
-            }
-            ExpressionData::Call { func, args } => {
-                let mut found = self.find_unbound_variables(func, bound.clone());
-
-                for field in args {
-                    let subfound = self.find_unbound_variables(field, bound.clone());
-
-                    found.extend(subfound.into_iter());
-                }
-
-                found
-            }
-            ExpressionData::Fun {
-                is_const: _,
-                args,
-                return_type: _,
-                body,
-                context: _,
-            } => {
-                let mut subbound = bound.clone();
-                for (arg_name, _) in args {
-                    subbound.insert(arg_name);
-                }
-
-                self.find_unbound_variables(body, subbound)
-            }
-            ExpressionData::Block { statements } => {
-                let mut subbound = bound.clone();
-                let mut found = HashSet::new();
-
-                for stmt in statements {
-                    match stmt {
-                        Statement::Binding {
-                            kind: _,
-                            variable,
-                            annotation: _,
-                            value,
-                        } => {
-                            found.extend(self.find_unbound_variables(value, subbound.clone()));
-                            subbound.insert(variable);
-                        }
-                        Statement::Expression(value) => {
-                            found.extend(self.find_unbound_variables(value, subbound.clone()));
-                        }
-                    }
-                }
-
-                found
-            }
-            ExpressionData::Const(inner) => self.find_unbound_variables(inner, bound),
-            ExpressionData::FunType { is_const: _, args, return_type } => {
-                let mut found = HashSet::new();
-
-                for field in args {
-                    let subfound = self.find_unbound_variables(field, bound.clone());
-
-                    found.extend(subfound.into_iter());
-                }
-
-                found.extend(
-                    self.find_unbound_variables(
-                        return_type
-                            .as_ref()
-                            .expect("expression should have return type"),
-                        bound,
-                    ),
-                );
-                found
-            }
-        }
-    }
-
     #[allow(unused)] // TODO: remove this
     fn add_builtin_function(
         &mut self,
@@ -318,7 +231,9 @@ impl Runtime {
 // const time methods
 impl Runtime {
     fn type_expression(&mut self, expr: Expression) -> Expression {
-        if TRACE { eprintln!("type_expression: {}", expr.data); }
+        if TRACE {
+            eprintln!("type_expression: {}", expr.data);
+        }
 
         match expr.data {
             data @ ExpressionData::IntLiteral(_) => Expression {
@@ -385,9 +300,14 @@ impl Runtime {
                     .collect();
                 let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
 
-                let last_typing_scope =
-                    self.const_state.as_ref().expect("const method called at runtime")
-                        .scopes.last().cloned().unwrap_or_default();
+                let last_typing_scope = self
+                    .const_state
+                    .as_ref()
+                    .expect("const method called at runtime")
+                    .scopes
+                    .last()
+                    .cloned()
+                    .unwrap_or_default();
 
                 self.const_state
                     .as_mut()
@@ -473,7 +393,11 @@ impl Runtime {
                     .expect("func should have been typed")
                     .data
                 {
-                    ExpressionData::FunType { is_const: false, args, return_type } => {
+                    ExpressionData::FunType {
+                        is_const: false,
+                        args,
+                        return_type,
+                    } => {
                         let parameters: Vec<_> = parameters
                             .into_iter()
                             .map(|arg| self.type_expression(arg))
@@ -508,12 +432,15 @@ impl Runtime {
                                 args: parameters,
                             },
                         }
-                    },
+                    }
                     ExpressionData::FunType { is_const: true, .. } => {
-                        let result = self.evaluate(ExpressionData::Call {
-                            func: Box::new(func),
-                            args: parameters,
-                        }.untyped());
+                        let result = self.evaluate(
+                            ExpressionData::Call {
+                                func: Box::new(func),
+                                args: parameters,
+                            }
+                            .untyped(),
+                        );
 
                         self.type_expression(result)
                     }
@@ -646,7 +573,7 @@ impl Runtime {
                     };
 
                     (stmt, None)
-                },
+                }
                 None => {
                     let value = self.type_expression(value);
                     let type_ = value.type_.clone().expect("value should have been typed");
@@ -667,7 +594,7 @@ impl Runtime {
                     };
 
                     (stmt, None)
-                },
+                }
             },
 
             Statement::Binding {
@@ -702,7 +629,7 @@ impl Runtime {
                     };
 
                     (stmt, None)
-                },
+                }
                 None => {
                     let value = self.evaluate(value);
                     let value = self.type_expression(value);
@@ -729,8 +656,8 @@ impl Runtime {
                     };
 
                     (stmt, None)
-                },
-            }
+                }
+            },
         }
     }
 }
@@ -825,7 +752,7 @@ impl ExpressionData {
                     return_type: other_ret,
                 },
             ) => {
-                   (!self_is_const || *other_is_const)  // non const-only functions can also be used at const time
+                (!self_is_const || *other_is_const)  // non const-only functions can also be used at const time
                                                         // i.e. fn(T) -> U <: const fn(T) -> U
                                                         // this works because there are no runtime-only features
                 && self_args.len() == other_args.len()
@@ -858,7 +785,11 @@ impl ExpressionData {
             ED::Constructor { name: _, data } => data
                 .iter()
                 .all(|field| ExpressionData::is_type(&field.data)),
-            ED::FunType { is_const: _, args, return_type } => {
+            ED::FunType {
+                is_const: _,
+                args,
+                return_type,
+            } => {
                 args.iter().all(|arg| ExpressionData::is_type(&arg.data))
                     && return_type
                         .as_ref()
@@ -866,6 +797,108 @@ impl ExpressionData {
                         .data
                         .is_type()
             }
+        }
+    }
+}
+
+fn find_unbound_variables<'a>(
+    expr: &'a Expression,
+    bound: HashSet<&'a String>,
+) -> HashSet<&'a String> {
+    match &expr.data {
+        ExpressionData::IntLiteral(_)
+        | ExpressionData::StringLiteral(_)
+        | ExpressionData::BuiltinFunction { .. }
+        | ExpressionData::BuiltinInt
+        | ExpressionData::BuiltinString
+        | ExpressionData::BuiltinType => HashSet::new(),
+        ExpressionData::Identifier(name) => {
+            if bound.contains(&name) {
+                HashSet::new()
+            } else {
+                HashSet::from([name])
+            }
+        }
+        ExpressionData::Constructor { name: _, data } => {
+            let mut found = HashSet::new();
+
+            for field in data {
+                let subfound = find_unbound_variables(field, bound.clone());
+
+                found.extend(subfound.into_iter());
+            }
+
+            found
+        }
+        ExpressionData::Call { func, args } => {
+            let mut found = find_unbound_variables(func, bound.clone());
+
+            for field in args {
+                let subfound = find_unbound_variables(field, bound.clone());
+
+                found.extend(subfound.into_iter());
+            }
+
+            found
+        }
+        ExpressionData::Fun {
+            is_const: _,
+            args,
+            return_type: _,
+            body,
+            context: _,
+        } => {
+            let mut subbound = bound.clone();
+            for (arg_name, _) in args {
+                subbound.insert(arg_name);
+            }
+
+            find_unbound_variables(body, subbound)
+        }
+        ExpressionData::Block { statements } => {
+            let mut subbound = bound.clone();
+            let mut found = HashSet::new();
+
+            for stmt in statements {
+                match stmt {
+                    Statement::Binding {
+                        kind: _,
+                        variable,
+                        annotation: _,
+                        value,
+                    } => {
+                        found.extend(find_unbound_variables(value, subbound.clone()));
+                        subbound.insert(variable);
+                    }
+                    Statement::Expression(value) => {
+                        found.extend(find_unbound_variables(value, subbound.clone()));
+                    }
+                }
+            }
+
+            found
+        }
+        ExpressionData::Const(inner) => find_unbound_variables(inner, bound),
+        ExpressionData::FunType {
+            is_const: _,
+            args,
+            return_type,
+        } => {
+            let mut found = HashSet::new();
+
+            for field in args {
+                let subfound = find_unbound_variables(field, bound.clone());
+
+                found.extend(subfound.into_iter());
+            }
+
+            found.extend(find_unbound_variables(
+                return_type
+                    .as_ref()
+                    .expect("expression should have return type"),
+                bound,
+            ));
+            found
         }
     }
 }
