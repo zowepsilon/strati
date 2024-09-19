@@ -42,6 +42,7 @@ pub enum ExpressionData {
     BuiltinFunction {
         name: &'static str,
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
+        runtime_available: bool,
     },
 }
 
@@ -182,10 +183,10 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             },
-            ED::BuiltinInt => write!(f, "Int"),
-            ED::BuiltinString => write!(f, "String"),
-            ED::BuiltinType => write!(f, "Type"),
-            ED::BuiltinFunction { name, handler: _ } => write!(f, "builtin function {name}"),
+            ED::BuiltinInt => write!(f, "$__Int"),
+            ED::BuiltinString => write!(f, "$__String"),
+            ED::BuiltinType => write!(f, "$__Type"),
+            ED::BuiltinFunction { name, .. } => write!(f, "builtin function {name}"),
         }
     }
 }

@@ -1,9 +1,3 @@
-const id = const fun (T: Type) {
-    fun (x: T) -> T { x }
-}
-
-let x = 5
-
-let y = id( Int )(x)
-
-y
+const x = 2
+let x = const {x}
+x

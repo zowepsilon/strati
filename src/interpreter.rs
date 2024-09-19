@@ -66,6 +66,7 @@ impl Runtime {
                         handler: |_rt, _args| {
                             panic!("attempted to call const-only function at runtime")
                         },
+                        runtime_available: false,
                     }
                     .untyped()
                 } else {
@@ -226,7 +227,7 @@ impl Runtime {
             .last()
             .expect("current scope should exist")
             .get(var)
-            .unwrap_or_else(|| panic!("unknown variable {var}"))
+            .unwrap_or_else(|| panic!("unknown variable {var} at {} time", if self.const_state.is_some() {"const"} else {"run"}))
             .clone()
     }
 
@@ -236,6 +237,7 @@ impl Runtime {
         name: &'static str,
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
         type_: Expression,
+        runtime_available: bool,
     ) {
         self.scopes
             .last_mut()
@@ -243,7 +245,7 @@ impl Runtime {
             .insert(
                 name.to_string(),
                 Expression {
-                    data: ExpressionData::BuiltinFunction { name, handler },
+                    data: ExpressionData::BuiltinFunction { name, handler, runtime_available },
                     type_: Some(Box::new(type_)),
                 },
             );
@@ -565,12 +567,19 @@ impl Runtime {
             ExpressionData::Const(inner) => {
                 let inner = self.evaluate(*inner);
 
-                self.type_expression(inner)
+                let inner = self.type_expression(inner);
+                
+                if !self.can_escape(&inner) {
+                    panic!("type error: {} cannot escape const time", inner.data);
+                }
+
+                inner
             }
-            data @ (ExpressionData::BuiltinInt
+            data @
+            ( ExpressionData::BuiltinInt
             | ExpressionData::BuiltinType
             | ExpressionData::BuiltinString
-            | ExpressionData::FunType { .. }) => Expression {
+            | ExpressionData::FunType { .. } ) => Expression {
                 data,
                 type_: Some(Box::new(ExpressionData::BuiltinType.untyped())),
             },
@@ -595,7 +604,7 @@ impl Runtime {
             .last()
             .expect("current scope should exist")
             .get(name)
-            .unwrap_or_else(|| panic!("unknown variable {name}"))
+            .unwrap_or_else(|| panic!("type error: unknown variable {name}"))
             .clone()
     }
 
@@ -678,14 +687,6 @@ impl Runtime {
                     let value = self.evaluate(value);
                     let value = self.type_expression(value);
 
-                    self.const_state
-                        .as_mut()
-                        .expect("const method called at runtime")
-                        .scopes
-                        .last_mut()
-                        .expect("current scope should exist")
-                        .insert(variable.clone(), annotation.clone());
-
                     self.scopes
                         .last_mut()
                         .expect("current scope should exist")
@@ -703,31 +704,47 @@ impl Runtime {
                 None => {
                     let value = self.evaluate(value);
                     let value = self.type_expression(value);
-                    let type_ = value.type_.clone().expect("value should have been typed");
-
-                    self.const_state
-                        .as_mut()
-                        .expect("const method called at runtime")
-                        .scopes
-                        .last_mut()
-                        .expect("current scope should exist")
-                        .insert(variable.clone(), *type_);
 
                     self.scopes
                         .last_mut()
                         .expect("current scope should exist")
                         .insert(variable.clone(), value.clone());
 
-                    let stmt = Statement::Binding {
-                        kind: BindingKind::Const,
-                        variable,
-                        annotation: None,
-                        value,
-                    };
-
-                    (stmt, None)
+                    (Statement::Expression(ExpressionData::unit().untyped()), None)
                 }
             },
+        }
+    }
+
+    fn can_escape(&self, expr: &Expression) -> bool {
+        if TRACE { dbg!("can_escape", expr); }
+        match &expr.data {
+            | ExpressionData::IntLiteral(_)
+            | ExpressionData::Identifier(_) // at this stage the expression was already
+                                            // type-checked, so we know this variable is available
+                                            // at runtime
+            | ExpressionData::StringLiteral(_) => true,
+            | ExpressionData::Const(_) 
+            | ExpressionData::FunType { .. } 
+            | ExpressionData::BuiltinInt 
+            | ExpressionData::BuiltinString 
+            | ExpressionData::BuiltinType => false,
+            ExpressionData::Constructor { name: _, data } => data.iter().all(|arg| self.can_escape(arg)),
+            ExpressionData::Fun { body, context, .. } => 
+                context.values().all(|val| self.can_escape(val))
+                || self.can_escape(body),
+            ExpressionData::Call { func, args } =>
+                self.can_escape(func)
+                || args.iter().all(|arg| self.can_escape(arg)),
+            ExpressionData::Block { statements } => {
+                statements.iter().all(|stmt| {
+                    match stmt {
+                        | Statement::Binding { value, .. }
+                        | Statement::Expression(value) => self.can_escape(value),
+                    }
+                })
+            },
+            ExpressionData::BuiltinFunction { runtime_available, .. } => *runtime_available,
         }
     }
 }
@@ -762,7 +779,7 @@ impl Program {
 
         let root = meta_rt.type_expression(root);
 
-        //println!("{}", root.data);
+        println!("{}", root.data);
 
         let mut rt = Runtime::new(false);
         let ret = rt.evaluate(root);

@@ -34,7 +34,7 @@ annotation = ":", expression
 let_statement = "let", identifier, annotation?, "=", expression
 const_statement = "const", identifier, annotation?, "=", expression
 
-fun_expression = "const"?, "fun", "(",
+fun_expression = "fun", "(",
            list(identifier, annotation), ")", 
            "->", expression, block_expression
 

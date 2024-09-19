@@ -133,8 +133,6 @@ impl Parser {
                 let _ = self.tokens.next();
                 match self.tokens.peek()?.data {
                     TokenData::BraceBlock(_) => Some(ExpressionData::Const(Box::new(self.block()?)).untyped()),
-                    TokenData::Fun => self.fun_expression(true),
-                    TokenData::Fn => self.fntype_expression(true),
                     _ => None,
                 }
             }
