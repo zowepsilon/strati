@@ -38,6 +38,8 @@ impl Runtime {
 // runtime/common methods
 impl Runtime {
     fn evaluate(&mut self, expr: Expression) -> Expression {
+        if TRACE { eprintln!("evaluate: {}", expr.data) };
+
         match expr.data {
             ExpressionData::BuiltinFunction { .. }
             | ExpressionData::IntLiteral(_)
@@ -53,7 +55,7 @@ impl Runtime {
             }
             ExpressionData::Fun {
                 is_const,
-                args,
+                mut args,
                 return_type,
                 body,
                 context: _,
@@ -74,11 +76,22 @@ impl Runtime {
                         .map(|name| (name.clone(), self.get_variable(name)))
                         .collect();
 
+
+                    let mut return_type = *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                    if self.const_state.is_some() {
+                        args =
+                            args.into_iter()
+                                .map(|(name, type_)| (name, self.evaluate(type_)))
+                                .collect();
+
+                        return_type = self.evaluate(return_type);
+                    }
+
                     Expression {
                         data: ExpressionData::Fun {
                             is_const,
                             args,
-                            return_type,
+                            return_type: Some(Box::new(return_type)),
                             body,
                             context,
                         },
@@ -168,13 +181,22 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ExpressionData::Const(inner) => panic!(
-                "const expression const {} cannot be evaluated at runtime",
-                inner.data
-            ),
-            ExpressionData::BuiltinInt
+            ExpressionData::Const(inner) => {
+                if self.const_state.is_some() {
+                    self.evaluate(*inner)
+                } else {
+                    panic!("const expression const {} cannot be evaluated at runtime", inner.data)
+                }
+            },
+            | ExpressionData::BuiltinInt
             | ExpressionData::BuiltinType
-            | ExpressionData::BuiltinString => panic!("types cannot be evaluated at runtime"),
+            | ExpressionData::BuiltinString => {
+                if self.const_state.is_some() {
+                    expr
+                } else {
+                    panic!("types cannot be evaluated at runtime")
+                }
+            },
         }
     }
 
@@ -279,7 +301,7 @@ impl Runtime {
                 }
             }
             ExpressionData::Fun {
-                is_const,
+                is_const: false,
                 args,
                 return_type,
                 body,
@@ -365,7 +387,7 @@ impl Runtime {
 
                 Expression {
                     data: ExpressionData::Fun {
-                        is_const,
+                        is_const: false,
                         args,
                         return_type: Some(Box::new(return_type.clone())),
                         body: Box::new(body),
@@ -373,14 +395,62 @@ impl Runtime {
                     },
                     type_: Some(Box::new(
                         ExpressionData::FunType {
-                            is_const,
+                            is_const: false,
                             args: arg_types,
                             return_type: Some(Box::new(return_type)),
                         }
                         .untyped(),
                     )),
                 }
-            }
+            },
+            ExpressionData::Fun {
+                is_const: true,
+                args,
+                return_type,
+                body,
+                context,
+            } => {
+                let ExpressionData::Block { statements } = body.data else {
+                    panic!("the parser guarantees that the function body is a block")
+                };
+
+                let args: Vec<_> = args
+                    .into_iter()
+                    .map(|(name, type_)| {
+                        let type_ = self.evaluate(type_);
+                        assert!(type_.data.is_type());
+
+                        (name, type_)
+                    })
+                    .collect();
+                let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
+
+                // code in non-const function bodies executed at const time have block-like scoping
+                let body = Expression {
+                    data: ExpressionData::Block {
+                        statements,
+                    },
+                    type_: return_type.clone(),
+                };
+
+                Expression {
+                    data: ExpressionData::Fun {
+                        is_const: false,
+                        args,
+                        return_type: return_type.clone(),
+                        body: Box::new(body),
+                        context,
+                    },
+                    type_: Some(Box::new(
+                        ExpressionData::FunType {
+                            is_const: true,
+                            args: arg_types,
+                            return_type,
+                        }
+                        .untyped(),
+                    )),
+                }
+            },
             ExpressionData::Call {
                 func,
                 args: parameters,
@@ -414,7 +484,7 @@ impl Runtime {
 
                             assert!(
                                 param_type.is_subtype_of(&arg.data),
-                                "{:?} is not a subtype of {:?}",
+                                "{} is not a subtype of {}",
                                 param_type,
                                 arg.data
                             );
@@ -692,7 +762,7 @@ impl Program {
 
         let root = meta_rt.type_expression(root);
 
-        println!("{}", root.data);
+        //println!("{}", root.data);
 
         let mut rt = Runtime::new(false);
         let ret = rt.evaluate(root);
@@ -752,7 +822,7 @@ impl ExpressionData {
                     return_type: other_ret,
                 },
             ) => {
-                (!self_is_const || *other_is_const)  // non const-only functions can also be used at const time
+                (*self_is_const == *other_is_const)  // non const-only functions can also be used at const time
                                                         // i.e. fn(T) -> U <: const fn(T) -> U
                                                         // this works because there are no runtime-only features
                 && self_args.len() == other_args.len()
