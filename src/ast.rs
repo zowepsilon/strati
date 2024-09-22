@@ -16,7 +16,6 @@ pub enum ExpressionData {
         data: Vec<Expression>,
     },
     Fun {
-        is_const: bool,
         args: Vec<(String, Expression)>,
         return_type: Option<Box<Expression>>,
         body: Box<Expression>,
@@ -31,7 +30,6 @@ pub enum ExpressionData {
     },
     Const(Box<Expression>),
     FunType {
-        is_const: bool,
         args: Vec<Expression>,
         return_type: Option<Box<Expression>>,
     },
@@ -114,11 +112,7 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             },
-            ED::Fun { is_const, args, return_type, body, context } => {
-                if *is_const {
-                    write!(f, "const ")?;
-                }
-
+            ED::Fun { args, return_type, body, context } => {
                 write!(f, "fun (")?;
                 for (name, type_) in args {
                     write!(f, "{}: {:indent$}, ", name, type_.data)?;
@@ -166,11 +160,7 @@ impl std::fmt::Display for ExpressionData {
                 }
             },
             ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
-            ED::FunType { is_const, args, return_type } => {
-                if *is_const {
-                    write!(f, "const ")?;
-                }
-
+            ED::FunType { args, return_type } => {
                 write!(f, "fn(")?;
                 for arg in args {
                     write!(f, "{:indent$}", arg.data)?;
@@ -183,9 +173,9 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             },
-            ED::BuiltinInt => write!(f, "$__Int"),
-            ED::BuiltinString => write!(f, "$__String"),
-            ED::BuiltinType => write!(f, "$__Type"),
+            ED::BuiltinInt => write!(f, "$Int"),
+            ED::BuiltinString => write!(f, "$String"),
+            ED::BuiltinType => write!(f, "$Type"),
             ED::BuiltinFunction { name, .. } => write!(f, "builtin function {name}"),
         }
     }

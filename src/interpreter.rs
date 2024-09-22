@@ -54,50 +54,37 @@ impl Runtime {
                 }
             }
             ExpressionData::Fun {
-                is_const,
                 mut args,
                 return_type,
                 body,
                 context: _,
             } => {
-                if is_const && self.const_state.is_none() {
-                    ExpressionData::BuiltinFunction {
-                        name: "const_only",
-                        handler: |_rt, _args| {
-                            panic!("attempted to call const-only function at runtime")
-                        },
-                        runtime_available: false,
-                    }
-                    .untyped()
-                } else {
-                    let to_bind =
-                        find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
-                    let context = to_bind
-                        .into_iter()
-                        .map(|name| (name.clone(), self.get_variable(name)))
-                        .collect();
+                let to_bind =
+                    find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
+                let context = to_bind
+                    .into_iter()
+                    .map(|name| (name.clone(), self.get_variable(name)))
+                    .collect();
 
 
-                    let mut return_type = *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
-                    if self.const_state.is_some() {
-                        args =
-                            args.into_iter()
-                                .map(|(name, type_)| (name, self.evaluate(type_)))
-                                .collect();
+                let mut return_type = *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                if self.const_state.is_some() {
+                    args =
+                        args.into_iter()
+                            .map(|(name, type_)| (name, self.evaluate(type_)))
+                            .collect();
 
-                        return_type = self.evaluate(return_type);
-                    }
+                    return_type = self.evaluate(return_type);
+                }
 
-                    Expression {
-                        data: ExpressionData::Fun {
-                            is_const,
-                            args,
-                            return_type: Some(Box::new(return_type)),
-                            body,
-                            context,
-                        },
-                        type_: expr.type_,
-                    }
+                Expression {
+                    data: ExpressionData::Fun {
+                        args,
+                        return_type: Some(Box::new(return_type)),
+                        body,
+                        context,
+                    },
+                    type_: expr.type_,
                 }
             }
             ExpressionData::Call {
@@ -105,17 +92,11 @@ impl Runtime {
                 args: parameters,
             } => match self.evaluate(*func).data {
                 ExpressionData::Fun {
-                    is_const,
                     args,
                     return_type: _,
                     body,
                     context,
                 } => {
-                    assert!(
-                        self.const_state.is_some() || !is_const,
-                        "cannot call const-only function at runtime"
-                    );
-
                     let ExpressionData::Block { statements } = body.data else {
                         panic!("the parser guarantees that the function body is a block")
                     };
@@ -164,7 +145,6 @@ impl Runtime {
             }
             ExpressionData::Const(inner) if self.const_state.is_some() => self.evaluate(*inner),
             ExpressionData::FunType {
-                is_const,
                 args,
                 return_type,
             } => {
@@ -175,7 +155,6 @@ impl Runtime {
 
                 Expression {
                     data: ExpressionData::FunType {
-                        is_const,
                         args,
                         return_type,
                     },
@@ -303,7 +282,6 @@ impl Runtime {
                 }
             }
             ExpressionData::Fun {
-                is_const: false,
                 args,
                 return_type,
                 body,
@@ -389,7 +367,6 @@ impl Runtime {
 
                 Expression {
                     data: ExpressionData::Fun {
-                        is_const: false,
                         args,
                         return_type: Some(Box::new(return_type.clone())),
                         body: Box::new(body),
@@ -397,7 +374,6 @@ impl Runtime {
                     },
                     type_: Some(Box::new(
                         ExpressionData::FunType {
-                            is_const: false,
                             args: arg_types,
                             return_type: Some(Box::new(return_type)),
                         }
@@ -405,118 +381,115 @@ impl Runtime {
                     )),
                 }
             },
-            ExpressionData::Fun {
-                is_const: true,
-                args,
-                return_type,
-                body,
-                context,
-            } => {
-                let ExpressionData::Block { statements } = body.data else {
-                    panic!("the parser guarantees that the function body is a block")
-                };
+            /*
+                ExpressionData::Fun {
+                    is_const: true,
+                    args,
+                    return_type,
+                    body,
+                    context,
+                } => {
+                    let ExpressionData::Block { statements } = body.data else {
+                        panic!("the parser guarantees that the function body is a block")
+                    };
 
-                let args: Vec<_> = args
-                    .into_iter()
-                    .map(|(name, type_)| {
-                        let type_ = self.evaluate(type_);
-                        assert!(type_.data.is_type());
+                    let args: Vec<_> = args
+                        .into_iter()
+                        .map(|(name, type_)| {
+                            let type_ = self.evaluate(type_);
+                            assert!(type_.data.is_type());
 
-                        (name, type_)
-                    })
-                    .collect();
-                let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
+                            (name, type_)
+                        })
+                        .collect();
+                    let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
 
-                // code in non-const function bodies executed at const time have block-like scoping
-                let body = Expression {
-                    data: ExpressionData::Block {
-                        statements,
-                    },
-                    type_: return_type.clone(),
-                };
+                    // code in non-const function bodies executed at const time have block-like scoping
+                    let body = Expression {
+                        data: ExpressionData::Block {
+                            statements,
+                        },
+                        type_: return_type.clone(),
+                    };
 
-                Expression {
-                    data: ExpressionData::Fun {
-                        is_const: false,
-                        args,
-                        return_type: return_type.clone(),
-                        body: Box::new(body),
-                        context,
-                    },
-                    type_: Some(Box::new(
-                        ExpressionData::FunType {
-                            is_const: true,
-                            args: arg_types,
-                            return_type,
-                        }
-                        .untyped(),
-                    )),
-                }
-            },
+                    Expression {
+                        data: ExpressionData::Fun {
+                            is_const: false,
+                            args,
+                            return_type: return_type.clone(),
+                            body: Box::new(body),
+                            context,
+                        },
+                        type_: Some(Box::new(
+                            ExpressionData::FunType {
+                                is_const: true,
+                                args: arg_types,
+                                return_type,
+                            }
+                            .untyped(),
+                        )),
+                    }
+                },
+            */
             ExpressionData::Call {
                 func,
                 args: parameters,
             } => {
-                let func = self.type_expression(*func);
-
-                match &func
-                    .type_
-                    .as_ref()
-                    .expect("func should have been typed")
-                    .data
-                {
-                    ExpressionData::FunType {
-                        is_const: false,
-                        args,
-                        return_type,
-                    } => {
-                        let parameters: Vec<_> = parameters
-                            .into_iter()
-                            .map(|arg| self.type_expression(arg))
-                            .collect();
-
-                        assert_eq!(args.len(), parameters.len(), "invalid argument count");
-
-                        for (arg, param) in iter::zip(args, parameters.iter()) {
-                            let param_type = &param
-                                .type_
-                                .as_ref()
-                                .expect("parameters should be typed")
-                                .data;
-
-                            assert!(
-                                param_type.is_subtype_of(&arg.data),
-                                "{} is not a subtype of {}",
-                                param_type,
-                                arg.data
-                            );
-                        }
-
-                        Expression {
-                            type_: Some(
-                                return_type
-                                    .as_ref()
-                                    .expect("function should have return type")
-                                    .clone(),
-                            ),
-                            data: ExpressionData::Call {
-                                func: Box::new(func),
-                                args: parameters,
-                            },
-                        }
-                    }
-                    ExpressionData::FunType { is_const: true, .. } => {
+                if let ExpressionData::Identifier(func) = &func.data {
+                    if let Some(func) = self.scopes.last().expect("current scope should exist").get(func) {
                         let result = self.evaluate(
                             ExpressionData::Call {
-                                func: Box::new(func),
+                                func: Box::new(func.clone()),
                                 args: parameters,
                             }
                             .untyped(),
                         );
 
-                        self.type_expression(result)
+                        return self.type_expression(result);
                     }
+
+                }
+                
+                let func = self.type_expression(*func);
+
+                let (args, return_type) = match &func.type_.as_ref().expect("func should have been typed").data {
+                    ExpressionData::FunType { args, return_type } => (args, return_type),
                     other => panic!("type error: cannot call {other:?}"),
+                };
+
+                let parameters: Vec<_> = parameters
+                    .into_iter()
+                    .map(|arg| self.type_expression(arg))
+                    .collect();
+
+                assert_eq!(args.len(), parameters.len(), "invalid argument count");
+
+                for (arg, param) in iter::zip(args, parameters.iter()) {
+                    let param_type = &param
+                        .type_
+                        .as_ref()
+                        .expect("parameters should be typed")
+                        .data;
+
+                    assert!(
+                        param_type.is_subtype_of(&arg.data),
+                        "{} is not a subtype of {}",
+                        param_type,
+                        arg.data
+                    );
+                }
+
+                Expression {
+                    type_: Some(
+                        return_type
+                            .as_ref()
+                            .expect("function should have return type")
+                            .clone(),
+                    ),
+                    data: ExpressionData::Call {
+                        func: Box::new(func),
+                        args: parameters,
+                    },
                 }
             }
             ExpressionData::Block { statements } => {
@@ -619,12 +592,7 @@ impl Runtime {
 
                 (Statement::Expression(expr), Some(*type_))
             }
-            Statement::Binding {
-                kind: BindingKind::Let,
-                variable,
-                annotation,
-                value,
-            } => match annotation {
+            Statement::Binding { kind: BindingKind::Let, variable, annotation, value } => match annotation {
                 Some(annotation) => {
                     let annotation = self.evaluate(annotation);
                     let value = self.type_expression(value);
@@ -677,15 +645,20 @@ impl Runtime {
             },
 
             Statement::Binding {
-                kind: BindingKind::Const,
-                variable,
-                annotation,
-                value,
+                kind: BindingKind::Const, variable, annotation, value,
             } => match annotation {
                 Some(annotation) => {
                     let annotation = self.evaluate(annotation);
                     let value = self.evaluate(value);
+                    // type check if the programmer added an annotation
                     let value = self.type_expression(value);
+
+                    assert!(
+                        value.type_.as_ref().expect("value should have been typed").data.is_subtype_of(&annotation.data),
+                        "{} is not a subtype of {}",
+                        value.type_.expect("value should have been typed").data,
+                        annotation.data
+                    );
 
                     self.scopes
                         .last_mut()
@@ -703,7 +676,7 @@ impl Runtime {
                 }
                 None => {
                     let value = self.evaluate(value);
-                    let value = self.type_expression(value);
+                    // note: const value should not be typed
 
                     self.scopes
                         .last_mut()
@@ -829,20 +802,15 @@ impl ExpressionData {
             }
             (
                 ED::FunType {
-                    is_const: self_is_const,
                     args: self_args,
                     return_type: self_ret,
                 },
                 ED::FunType {
-                    is_const: other_is_const,
                     args: other_args,
                     return_type: other_ret,
                 },
             ) => {
-                (*self_is_const == *other_is_const)  // non const-only functions can also be used at const time
-                                                        // i.e. fn(T) -> U <: const fn(T) -> U
-                                                        // this works because there are no runtime-only features
-                && self_args.len() == other_args.len()
+                self_args.len() == other_args.len()
                 && iter::zip(self_args, other_args).all(|(self_arg, other_arg)| {
                     // functions are contravariant w.r.t their arguments
                     other_arg.data.is_subtype_of(&self_arg.data)
@@ -873,7 +841,6 @@ impl ExpressionData {
                 .iter()
                 .all(|field| ExpressionData::is_type(&field.data)),
             ED::FunType {
-                is_const: _,
                 args,
                 return_type,
             } => {
@@ -929,7 +896,6 @@ fn find_unbound_variables<'a>(
             found
         }
         ExpressionData::Fun {
-            is_const: _,
             args,
             return_type: _,
             body,
@@ -967,7 +933,6 @@ fn find_unbound_variables<'a>(
         }
         ExpressionData::Const(inner) => find_unbound_variables(inner, bound),
         ExpressionData::FunType {
-            is_const: _,
             args,
             return_type,
         } => {

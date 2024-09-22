@@ -102,8 +102,8 @@ impl Parser {
         if TRACE { dbg!("expression", self.tokens.peek().unwrap()); }
 
         let mut expr = match self.tokens.peek()?.data {
-            TokenData::Fn => self.fntype_expression(false),
-            TokenData::Fun => self.fun_expression(false),
+            TokenData::Fn => self.fntype_expression(),
+            TokenData::Fun => self.fun_expression(),
             TokenData::Integer(_) => {
                 let Some(Token { data: TokenData::Integer(value), .. }) = self.tokens.next()
                     else { unreachable!("self.tokens was peeked successfully") };
@@ -226,7 +226,7 @@ impl Parser {
         })
     }
 
-    fn fun_expression(&mut self, is_const: bool) -> Option<Expression> {
+    fn fun_expression(&mut self) -> Option<Expression> {
         if TRACE { dbg!("fun_expression", self.tokens.peek()); }
         expect!(self, TokenData::Fun)?;
 
@@ -257,7 +257,6 @@ impl Parser {
         let body = Box::new(body);
         
         Some(ExpressionData::Fun {
-            is_const,
             args,
             return_type,
             body,
@@ -265,7 +264,7 @@ impl Parser {
         }.untyped())
     }
 
-    fn fntype_expression(&mut self, is_const: bool) -> Option<Expression> {
+    fn fntype_expression(&mut self) -> Option<Expression> {
         if TRACE { dbg!("fun_expression", self.tokens.peek()); }
 
         expect!(self, TokenData::Fn)?;
@@ -289,7 +288,6 @@ impl Parser {
         };
 
         Some(ExpressionData::FunType {
-            is_const,
             args,
             return_type,
         }.untyped())
