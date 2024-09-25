@@ -1,18 +1,22 @@
-const id = fun (T: Type) {
+const id = fun ($T: Type) {
     fun (x: T) -> T {
         x
     }
 }
 
-const idint = id(Int)
+const $x = id(Int)
 
 let th = const { idint }
 
 const t = 0
 let t = th(const { t })
 
+$hello
+
+add($woo, $it, $works)
+
 const { quote {
-    42
+    let $x = 42
     print("hello")
 } }
 

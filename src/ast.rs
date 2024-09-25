@@ -1,9 +1,15 @@
-use std::collections::HashMap;
 use crate::interpreter::Runtime;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Program {
     pub root: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ident {
+    Plain(String),
+    Splice(String),
 }
 
 #[derive(Debug, Clone)]
@@ -11,14 +17,18 @@ pub enum ExpressionData {
     IntLiteral(String),
     StringLiteral(String),
     Identifier(String),
+    Splice(String),
     Constructor {
-        name: Option<String>,
+        name: Option<Ident>,
         data: Vec<Expression>,
     },
     Fun {
-        args: Vec<(String, Expression)>,
+        args: Vec<(Ident, Expression)>,
         return_type: Option<Box<Expression>>,
         body: Box<Expression>,
+        // context variable names cannot be splices
+        // because when the context is built (at evaluation)
+        // all syntactic sugar should have disappeared
         context: HashMap<String, Expression>,
     },
     Call {
@@ -26,7 +36,7 @@ pub enum ExpressionData {
         args: Vec<Expression>,
     },
     Block {
-        statements: Vec<Statement>
+        statements: Vec<Statement>,
     },
     Const(Box<Expression>),
     Quote(Vec<Statement>),
@@ -62,11 +72,27 @@ pub enum BindingKind {
 pub enum Statement {
     Binding {
         kind: BindingKind,
-        variable: String,
+        variable: Ident,
         annotation: Option<Expression>,
         value: Expression,
     },
     Expression(Expression),
+}
+
+impl Ident {
+    pub fn plain_ref(&self) -> &String {
+        match self {
+            Ident::Plain(name) => name,
+            Ident::Splice(_) => panic!("expected concrete identifier, found splice"),
+        }
+    }
+
+    pub fn plain(self) -> String {
+        match self {
+            Ident::Plain(name) => name,
+            Ident::Splice(_) => panic!("expected concrete identifier, found splice"),
+        }
+    }
 }
 
 impl ExpressionData {
@@ -96,6 +122,7 @@ impl std::fmt::Display for ExpressionData {
             ED::IntLiteral(i) => write!(f, "{i}"),
             ED::StringLiteral(s) => write!(f, "\"{s}\""),
             ED::Identifier(name) => write!(f, "{name}"),
+            ED::Splice(name) => write!(f, "${name}"),
             ED::Constructor { name, data } => {
                 write!(f, ".")?;
                 if let Some(name) = name {
@@ -113,8 +140,13 @@ impl std::fmt::Display for ExpressionData {
                 }
 
                 Ok(())
-            },
-            ED::Fun { args, return_type, body, context } => {
+            }
+            ED::Fun {
+                args,
+                return_type,
+                body,
+                context,
+            } => {
                 write!(f, "fun (")?;
                 for (name, type_) in args {
                     write!(f, "{}: {:indent$}, ", name, type_.data)?;
@@ -136,7 +168,7 @@ impl std::fmt::Display for ExpressionData {
                 write!(f, " {:indent$}", body.data)?;
 
                 Ok(())
-            },
+            }
             ED::Call { func, args } => {
                 write!(f, "{:indent$}(", func.data)?;
 
@@ -147,20 +179,25 @@ impl std::fmt::Display for ExpressionData {
                 write!(f, ")")?;
 
                 Ok(())
-            },
+            }
             ED::Block { statements } => {
                 if statements.is_empty() {
                     write!(f, "quote {{}}")
                 } else {
                     write!(f, "quote {{")?;
                     for stmt in statements {
-                        write!(f, "\n{: >indent$}{stmt:indent$}", "", indent = indent+offset)?;
+                        write!(
+                            f,
+                            "\n{: >indent$}{stmt:indent$}",
+                            "",
+                            indent = indent + offset
+                        )?;
                     }
                     write!(f, "\n{: >indent$}}}", "")?;
 
                     Ok(())
                 }
-            },
+            }
             ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
             ED::Quote(inner) => {
                 if inner.is_empty() {
@@ -168,7 +205,12 @@ impl std::fmt::Display for ExpressionData {
                 } else {
                     write!(f, "{{")?;
                     for stmt in inner {
-                        write!(f, "\n{: >indent$}{stmt:indent$}", "", indent = indent+offset)?;
+                        write!(
+                            f,
+                            "\n{: >indent$}{stmt:indent$}",
+                            "",
+                            indent = indent + offset
+                        )?;
                     }
                     write!(f, "\n{: >indent$}}}", "")?;
 
@@ -187,7 +229,7 @@ impl std::fmt::Display for ExpressionData {
                 }
 
                 Ok(())
-            },
+            }
             ED::BuiltinInt => write!(f, "$Int"),
             ED::BuiltinString => write!(f, "$String"),
             ED::BuiltinType => write!(f, "$Type"),
@@ -202,15 +244,19 @@ impl std::fmt::Display for Statement {
         let indent = f.width().unwrap_or(0);
 
         match self {
-            Statement::Binding { kind, variable, annotation, value } => {
-
+            Statement::Binding {
+                kind,
+                variable,
+                annotation,
+                value,
+            } => {
                 match kind {
                     BindingKind::Let => write!(f, "let")?,
                     BindingKind::Const => write!(f, "const")?,
                 }
 
                 write!(f, " {variable}")?;
-                
+
                 if let Some(type_) = annotation {
                     write!(f, ": {:indent$}", type_.data)?;
                 }
@@ -218,8 +264,17 @@ impl std::fmt::Display for Statement {
                 write!(f, " = {:indent$}", value.data)?;
 
                 Ok(())
-            },
+            }
             Statement::Expression(expr) => write!(f, "{:indent$}", expr.data),
+        }
+    }
+}
+
+impl std::fmt::Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ident::Plain(name) => write!(f, "{name}"),
+            Ident::Splice(name) => write!(f, "${name}"),
         }
     }
 }

@@ -18,29 +18,31 @@ statement = expression
 expression = integer
            | string
            | identifier
+           | splice
            | "(", newline*, expression, newline*, ")"
            | block
            | expression, "(", list(expression), ")"
            | fun_expression
            | fntype_expression
            | constructor
-           | "const" block
-           // todo if
+           | "const", block
+           | "quote", block
 
 block = "{", statements, "}"
 statements = newline*, (statement, newline)*, statement, newline?
 
 annotation = ":", expression
+splice = "$", identifier
 
-let_statement = "let", identifier, annotation?, "=", expression
-const_statement = "const", identifier, annotation?, "=", expression
+let_statement = "let",     (identifier | splice), annotation?, "=", expression
+const_statement = "const", (identifier | splice), annotation?, "=", expression
 
 fun_expression = "fun", "(",
-           list(identifier, annotation), ")", 
+           list((identifier | splice), annotation), ")", 
            "->", expression, block_expression
 
 fntype_expression = "fn", "(", list(expression), ")", "->", expression
 
-constructor = ".", identifier?, ("(", list(expression), ")")?
+constructor = ".", (identifier | splice)?, ("(", list(expression), ")")?
 
 program = statements

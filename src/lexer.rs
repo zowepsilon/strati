@@ -8,6 +8,7 @@ pub enum TokenData {
 
     Colon,
     Comma,
+    Dollar,
     Dot,
     ThinArrow,
 
@@ -223,6 +224,7 @@ impl<'a> Iterator for Lexer<'a> {
                 ')' | '}' => unreachable!("end of block should have been detected"),
                 ':' => self.token(Colon),
                 ',' => self.token(Comma),
+                '$' => self.token(Dollar),
                 '.' => self.token(Dot),
                 '=' => self.token(Assign),
                 '-' => two_char_token!(
@@ -290,6 +292,7 @@ impl Display for TokenData {
             }
             TD::Colon => write!(f, ": "),
             TD::Comma => write!(f, ", "),
+            TD::Dollar => write!(f, "$"),
             TD::Dot => write!(f, "."),
             TD::Assign => write!(f, "= "),
             TD::Let => write!(f, "let "),

@@ -1,9 +1,9 @@
 TODO:
 - quote block
     - quote block syntax
-    - unquote syntax (`$ident`)
+    - splice syntax (`$ident`)
     - quote block evaluation =
-        interpolate unquotes
+        interpolate splices
         (keep as quote block)
     - quote block escape
         - can_escape(&Expr) -> bool ==> escape(Expr) -> Option < Expr >
@@ -22,4 +22,4 @@ TODO:
 - lazily parse paren token trees at function calls
 - allow passing tokens in const functions
 - parse tree patterns
-- hygiene ?
+- hygiensple ?

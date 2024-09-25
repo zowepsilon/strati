@@ -55,14 +55,9 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ED::Fun {
-                mut args,
-                return_type,
-                body,
-                context: _,
-            } => {
+            ED::Fun { mut args, return_type, body, context: _, } => {
                 let to_bind =
-                    find_unbound_variables(&body, args.iter().map(|(name, _)| name).collect());
+                    find_unbound_variables(&body, args.iter().map(|(name, _)| name.plain_ref()).collect());
                 let context = to_bind
                     .into_iter()
                     .map(|name| (name.clone(), self.get_variable(name)))
@@ -89,10 +84,7 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ED::Call {
-                func,
-                args: parameters,
-            } => match self.evaluate(*func).data {
+            ED::Call { func, args: parameters } => match self.evaluate(*func).data {
                 ED::Fun {
                     args,
                     return_type: _,
@@ -112,7 +104,7 @@ impl Runtime {
 
                     let current_scope = self.scopes.last_mut().expect("current scope should exist");
                     for ((arg_name, _), value) in iter::zip(args, parameters) {
-                        current_scope.insert(arg_name, value);
+                        current_scope.insert(arg_name.plain(), value);
                     }
 
                     let mut last_value = None;
@@ -145,10 +137,7 @@ impl Runtime {
 
                 last_value.unwrap_or_else(|| ED::unit().untyped())
             }
-            ED::FunType {
-                args,
-                return_type,
-            } => {
+            ED::FunType { args, return_type } => {
                 if self.const_state.is_some() {
                     let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
                     let return_type =
@@ -180,6 +169,7 @@ impl Runtime {
                     panic!("quote expression {} cannot be evaluated at runtime", ExpressionData::Quote(inner))
                 }
             },
+            ED::Splice(name) => panic!("cannot evaluate splice ${name}"),
             | ED::BuiltinInt
             | ED::BuiltinType
             | ED::BuiltinQuote
@@ -207,7 +197,7 @@ impl Runtime {
                 self.scopes
                     .last_mut()
                     .expect("current scope should exist")
-                    .insert(variable, value);
+                    .insert(variable.plain(), value);
 
                 None
             }
@@ -251,20 +241,22 @@ impl Runtime {
             eprintln!("type_expression: {}", expr.data);
         }
 
+        use ExpressionData as ED;
+
         match expr.data {
-            data @ ExpressionData::IntLiteral(_) => Expression {
+            data @ ED::IntLiteral(_) => Expression {
                 data,
                 type_: Some(Box::new(ExpressionData::BuiltinInt.untyped())),
             },
-            data @ ExpressionData::StringLiteral(_) => Expression {
+            data @ ED::StringLiteral(_) => Expression {
                 data,
-                type_: Some(Box::new(ExpressionData::BuiltinString.untyped())),
+                type_: Some(Box::new(ED::BuiltinString.untyped())),
             },
-            ExpressionData::Identifier(name) => Expression {
+            ED::Identifier(name) => Expression {
                 type_: Some(Box::new(self.get_type_of_variable(&name))),
-                data: ExpressionData::Identifier(name),
+                data: ED::Identifier(name),
             },
-            ExpressionData::Constructor { name, data } => {
+            ED::Constructor { name, data } => {
                 let data: Vec<_> = data
                     .into_iter()
                     .map(|field| self.type_expression(field))
@@ -281,12 +273,12 @@ impl Runtime {
                     .collect();
 
                 Expression {
-                    data: ExpressionData::Constructor {
+                    data: ED::Constructor {
                         name: name.clone(),
                         data,
                     },
                     type_: Some(Box::new(
-                        ExpressionData::Constructor {
+                        ED::Constructor {
                             name,
                             data: field_types,
                         }
@@ -294,13 +286,13 @@ impl Runtime {
                     )),
                 }
             }
-            ExpressionData::Fun {
+            ED::Fun {
                 args,
                 return_type,
                 body,
                 context,
             } => {
-                let ExpressionData::Block { statements } = body.data else {
+                let ED::Block { statements } = body.data else {
                     panic!("the parser guarantees that the function body is a block")
                 };
 
@@ -343,7 +335,7 @@ impl Runtime {
                     .expect("current scope should exist");
 
                 for (name, type_) in args.iter() {
-                    current_scope.insert(name.clone(), type_.clone());
+                    current_scope.insert(name.plain_ref().clone(), type_.clone());
                 }
 
                 let mut typed_statements = Vec::new();
@@ -363,30 +355,30 @@ impl Runtime {
                 self.scopes.pop();
 
                 let found_return_type =
-                    last_type.unwrap_or_else(|| ExpressionData::unit().untyped());
+                    last_type.unwrap_or_else(|| ED::unit().untyped());
 
                 let return_type =
-                    *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                    *return_type.unwrap_or_else(|| Box::new(ED::unit().untyped()));
                 let return_type = self.evaluate(return_type);
 
                 assert!(found_return_type.data.is_subtype_of(&return_type.data));
 
                 let body = Expression {
-                    data: ExpressionData::Block {
+                    data: ED::Block {
                         statements: typed_statements,
                     },
                     type_: Some(Box::new(return_type.clone())),
                 };
 
                 Expression {
-                    data: ExpressionData::Fun {
+                    data: ED::Fun {
                         args,
                         return_type: Some(Box::new(return_type.clone())),
                         body: Box::new(body),
                         context,
                     },
                     type_: Some(Box::new(
-                        ExpressionData::FunType {
+                        ED::FunType {
                             args: arg_types,
                             return_type: Some(Box::new(return_type)),
                         }
@@ -444,14 +436,11 @@ impl Runtime {
                     }
                 },
             */
-            ExpressionData::Call {
-                func,
-                args: parameters,
-            } => {
-                if let ExpressionData::Identifier(func) = &func.data {
+            ED::Call { func, args: parameters } => {
+                if let ED::Identifier(func) = &func.data {
                     if let Some(func) = self.scopes.last().expect("current scope should exist").get(func) {
                         let result = self.evaluate(
-                            ExpressionData::Call {
+                            ED::Call {
                                 func: Box::new(func.clone()),
                                 args: parameters,
                             }
@@ -466,7 +455,7 @@ impl Runtime {
                 let func = self.type_expression(*func);
 
                 let (args, return_type) = match &func.type_.as_ref().expect("func should have been typed").data {
-                    ExpressionData::FunType { args, return_type } => (args, return_type),
+                    ED::FunType { args, return_type } => (args, return_type),
                     other => panic!("type error: cannot call {other:?}"),
                 };
 
@@ -505,7 +494,7 @@ impl Runtime {
                     },
                 }
             }
-            ExpressionData::Block { statements } => {
+            ED::Block { statements } => {
                 let context = self
                     .const_state
                     .as_mut()
@@ -541,16 +530,16 @@ impl Runtime {
                     .pop();
                 self.scopes.pop();
 
-                let return_type = last_type.unwrap_or_else(|| ExpressionData::unit().untyped());
+                let return_type = last_type.unwrap_or_else(|| ED::unit().untyped());
 
                 Expression {
-                    data: ExpressionData::Block {
+                    data: ED::Block {
                         statements: typed_statements,
                     },
                     type_: Some(Box::new(return_type)),
                 }
             }
-            ExpressionData::Const(inner) => {
+            ED::Const(inner) => {
                 let inner = self.evaluate(*inner);
 
                 let inner = self.type_expression(inner);
@@ -561,22 +550,23 @@ impl Runtime {
 
                 inner
             }
-            ExpressionData::Quote(inner) => {
+            ED::Quote(inner) => {
                 Expression {
                     data: ExpressionData::Quote(inner),
-                    type_: Some(Box::new(ExpressionData::BuiltinQuote.untyped())),
+                    type_: Some(Box::new(ED::BuiltinQuote.untyped())),
                 }
-            }
-            data @
-            ( ExpressionData::BuiltinInt
-            | ExpressionData::BuiltinType
-            | ExpressionData::BuiltinQuote
-            | ExpressionData::BuiltinString
-            | ExpressionData::FunType { .. } ) => Expression {
-                data,
-                type_: Some(Box::new(ExpressionData::BuiltinType.untyped())),
             },
-            data @ ExpressionData::BuiltinFunction { .. } => {
+            ED::Splice(name) => panic!("cannot type splice ${name}"),
+            data @
+            ( ED::BuiltinInt
+            | ED::BuiltinType
+            | ED::BuiltinQuote
+            | ED::BuiltinString
+            | ED::FunType { .. } ) => Expression {
+                data,
+                type_: Some(Box::new(ED::BuiltinType.untyped())),
+            },
+            data @ ED::BuiltinFunction { .. } => {
                 assert!(expr
                     .type_
                     .as_ref()
@@ -630,7 +620,7 @@ impl Runtime {
                         .scopes
                         .last_mut()
                         .expect("current scope should exist")
-                        .insert(variable.clone(), annotation.clone());
+                        .insert(variable.plain_ref().clone(), annotation.clone());
 
                     let stmt = Statement::Binding {
                         kind: BindingKind::Let,
@@ -651,7 +641,7 @@ impl Runtime {
                         .scopes
                         .last_mut()
                         .expect("current scope should exist")
-                        .insert(variable.clone(), *type_);
+                        .insert(variable.plain_ref().clone(), *type_);
 
                     let stmt = Statement::Binding {
                         kind: BindingKind::Let,
@@ -683,7 +673,7 @@ impl Runtime {
                     self.scopes
                         .last_mut()
                         .expect("current scope should exist")
-                        .insert(variable.clone(), value.clone());
+                        .insert(variable.plain_ref().clone(), value.clone());
 
                     let stmt = Statement::Binding {
                         kind: BindingKind::Const,
@@ -701,7 +691,7 @@ impl Runtime {
                     self.scopes
                         .last_mut()
                         .expect("current scope should exist")
-                        .insert(variable.clone(), value.clone());
+                        .insert(variable.plain_ref().clone(), value.clone());
 
                     (Statement::Expression(ExpressionData::unit().untyped()), None)
                 }
@@ -713,12 +703,14 @@ impl Runtime {
         if TRACE { dbg!("can_escape", expr); }
         match &expr.data {
             | ExpressionData::IntLiteral(_)
-            | ExpressionData::Identifier(_) // at this stage the expression was already
+            | ExpressionData::Identifier(_) // TODO: escape before type checking
+                                            // at this stage the expression was already
                                             // type-checked, so we know this variable is available
                                             // at runtime
             | ExpressionData::StringLiteral(_) => true,
             | ExpressionData::Const(_) 
             | ExpressionData::FunType { .. } 
+            | ExpressionData::Splice(_)
             | ExpressionData::BuiltinInt 
             | ExpressionData::BuiltinString 
             | ExpressionData::BuiltinQuote
@@ -854,7 +846,7 @@ impl ExpressionData {
         use ExpressionData as ED;
 
         match self {
-            ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Const(_) => {
+            ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Const(_) | ED::Splice(_) => {
                 panic!("unevaluated expression while checking subtyping")
             }
             | ED::IntLiteral(_)
@@ -891,13 +883,14 @@ fn find_unbound_variables<'a>(
     use ExpressionData as ED;
 
     match &expr.data {
-        ED::IntLiteral(_)
+        | ED::IntLiteral(_)
         | ED::StringLiteral(_)
         | ED::BuiltinFunction { .. }
         | ED::BuiltinInt
         | ED::BuiltinString
         | ED::BuiltinQuote
         | ED::BuiltinType => HashSet::new(),
+        ED::Splice(name) => unreachable!("find_bound_variables on splice ${name}"),
         ED::Identifier(name) => {
             if bound.contains(&name) {
                 HashSet::new()
@@ -935,7 +928,7 @@ fn find_unbound_variables<'a>(
         } => {
             let mut subbound = bound.clone();
             for (arg_name, _) in args {
-                subbound.insert(arg_name);
+                subbound.insert(arg_name.plain_ref());
             }
 
             find_unbound_variables(body, subbound)
@@ -953,7 +946,7 @@ fn find_unbound_variables<'a>(
                         value,
                     } => {
                         found.extend(find_unbound_variables(value, subbound.clone()));
-                        subbound.insert(variable);
+                        subbound.insert(variable.plain_ref());
                     }
                     Statement::Expression(value) => {
                         found.extend(find_unbound_variables(value, subbound.clone()));
