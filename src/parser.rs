@@ -135,7 +135,18 @@ impl Parser {
                     TokenData::BraceBlock(_) => Some(ExpressionData::Const(Box::new(self.block()?)).untyped()),
                     _ => None,
                 }
-            }
+            },
+            TokenData::Quote => {
+                let _ = self.tokens.next();
+                match self.tokens.next()?.data {
+                    TokenData::BraceBlock(inner) => {
+                        let mut inner = Parser::new(inner);
+
+                        Some(ExpressionData::Quote(inner.statements()?).untyped())
+                    },
+                    _ => None,
+                }
+            },
             _ => None
         }?;
 

@@ -1,4 +1,3 @@
-
 const id = fun (T: Type) {
     fun (x: T) -> T {
         x
@@ -10,6 +9,11 @@ const idint = id(Int)
 let th = const { idint }
 
 const t = 0
-let t = const { t }
+let t = th(const { t })
+
+const { quote {
+    42
+    print("hello")
+} }
 
 id(Int)(t)

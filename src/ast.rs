@@ -29,14 +29,16 @@ pub enum ExpressionData {
         statements: Vec<Statement>
     },
     Const(Box<Expression>),
+    Quote(Vec<Statement>),
     FunType {
         args: Vec<Expression>,
         return_type: Option<Box<Expression>>,
     },
-    // internal, non-unparsable expressions
+    // internal, unparsable expressions
     BuiltinInt,
     BuiltinString,
     BuiltinType,
+    BuiltinQuote,
     BuiltinFunction {
         name: &'static str,
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
@@ -148,9 +150,9 @@ impl std::fmt::Display for ExpressionData {
             },
             ED::Block { statements } => {
                 if statements.is_empty() {
-                    write!(f, "{{}}")
+                    write!(f, "quote {{}}")
                 } else {
-                    write!(f, "{{")?;
+                    write!(f, "quote {{")?;
                     for stmt in statements {
                         write!(f, "\n{: >indent$}{stmt:indent$}", "", indent = indent+offset)?;
                     }
@@ -160,6 +162,19 @@ impl std::fmt::Display for ExpressionData {
                 }
             },
             ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
+            ED::Quote(inner) => {
+                if inner.is_empty() {
+                    write!(f, "{{}}")
+                } else {
+                    write!(f, "{{")?;
+                    for stmt in inner {
+                        write!(f, "\n{: >indent$}{stmt:indent$}", "", indent = indent+offset)?;
+                    }
+                    write!(f, "\n{: >indent$}}}", "")?;
+
+                    Ok(())
+                }
+            }
             ED::FunType { args, return_type } => {
                 write!(f, "fn(")?;
                 for arg in args {
@@ -176,6 +191,7 @@ impl std::fmt::Display for ExpressionData {
             ED::BuiltinInt => write!(f, "$Int"),
             ED::BuiltinString => write!(f, "$String"),
             ED::BuiltinType => write!(f, "$Type"),
+            ED::BuiltinQuote => write!(f, "$Quote"),
             ED::BuiltinFunction { name, .. } => write!(f, "builtin function {name}"),
         }
     }

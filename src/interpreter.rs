@@ -40,20 +40,22 @@ impl Runtime {
     fn evaluate(&mut self, expr: Expression) -> Expression {
         if TRACE { eprintln!("evaluate: {}", expr.data) };
 
+        use ExpressionData as ED;
+
         match expr.data {
-            ExpressionData::BuiltinFunction { .. }
-            | ExpressionData::IntLiteral(_)
-            | ExpressionData::StringLiteral(_) => expr,
-            ExpressionData::Identifier(var) => self.get_variable(&var),
-            ExpressionData::Constructor { name, data } => {
+            ED::BuiltinFunction { .. }
+            | ED::IntLiteral(_)
+            | ED::StringLiteral(_) => expr,
+            ED::Identifier(var) => self.get_variable(&var),
+            ED::Constructor { name, data } => {
                 let data = data.into_iter().map(|e| self.evaluate(e)).collect();
 
                 Expression {
-                    data: ExpressionData::Constructor { name, data },
+                    data: ED::Constructor { name, data },
                     type_: expr.type_,
                 }
             }
-            ExpressionData::Fun {
+            ED::Fun {
                 mut args,
                 return_type,
                 body,
@@ -67,7 +69,7 @@ impl Runtime {
                     .collect();
 
 
-                let mut return_type = *return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                let mut return_type = *return_type.unwrap_or_else(|| Box::new(ED::unit().untyped()));
                 if self.const_state.is_some() {
                     args =
                         args.into_iter()
@@ -78,7 +80,7 @@ impl Runtime {
                 }
 
                 Expression {
-                    data: ExpressionData::Fun {
+                    data: ED::Fun {
                         args,
                         return_type: Some(Box::new(return_type)),
                         body,
@@ -87,17 +89,17 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ExpressionData::Call {
+            ED::Call {
                 func,
                 args: parameters,
             } => match self.evaluate(*func).data {
-                ExpressionData::Fun {
+                ED::Fun {
                     args,
                     return_type: _,
                     body,
                     context,
                 } => {
-                    let ExpressionData::Block { statements } = body.data else {
+                    let ED::Block { statements } = body.data else {
                         panic!("the parser guarantees that the function body is a block")
                     };
 
@@ -120,9 +122,9 @@ impl Runtime {
 
                     self.scopes.pop();
 
-                    last_value.unwrap_or_else(|| ExpressionData::unit().untyped())
+                    last_value.unwrap_or_else(|| ED::unit().untyped())
                 }
-                ExpressionData::BuiltinFunction { handler, .. } => {
+                ED::BuiltinFunction { handler, .. } => {
                     let parameters: Vec<_> =
                         parameters.into_iter().map(|p| self.evaluate(p)).collect();
 
@@ -130,7 +132,7 @@ impl Runtime {
                 }
                 _ => panic!("type error: expected closure value"),
             },
-            ExpressionData::Block { statements } => {
+            ED::Block { statements } => {
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
 
@@ -141,36 +143,47 @@ impl Runtime {
 
                 self.scopes.pop();
 
-                last_value.unwrap_or_else(|| ExpressionData::unit().untyped())
+                last_value.unwrap_or_else(|| ED::unit().untyped())
             }
-            ExpressionData::Const(inner) if self.const_state.is_some() => self.evaluate(*inner),
-            ExpressionData::FunType {
+            ED::FunType {
                 args,
                 return_type,
             } => {
-                let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
-                let return_type =
-                    return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
-                let return_type = Some(Box::new(self.evaluate(*return_type)));
+                if self.const_state.is_some() {
+                    let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
+                    let return_type =
+                        return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
+                    let return_type = Some(Box::new(self.evaluate(*return_type)));
 
-                Expression {
-                    data: ExpressionData::FunType {
-                        args,
-                        return_type,
-                    },
-                    type_: expr.type_,
+                    Expression {
+                        data: ExpressionData::FunType {
+                            args,
+                            return_type,
+                        },
+                        type_: expr.type_,
+                    }
+                } else {
+                    panic!("fun type {} cannot be evaluated at runtime", ED::FunType{args, return_type})
                 }
             }
-            ExpressionData::Const(inner) => {
+            ED::Const(inner) => {
                 if self.const_state.is_some() {
                     self.evaluate(*inner)
                 } else {
                     panic!("const expression const {} cannot be evaluated at runtime", inner.data)
                 }
             },
-            | ExpressionData::BuiltinInt
-            | ExpressionData::BuiltinType
-            | ExpressionData::BuiltinString => {
+            ED::Quote(inner) => {
+                if self.const_state.is_some() {
+                    todo!("quote block evaluation")
+                } else {
+                    panic!("quote expression {} cannot be evaluated at runtime", ExpressionData::Quote(inner))
+                }
+            },
+            | ED::BuiltinInt
+            | ED::BuiltinType
+            | ED::BuiltinQuote
+            | ED::BuiltinString => {
                 if self.const_state.is_some() {
                     expr
                 } else {
@@ -548,9 +561,16 @@ impl Runtime {
 
                 inner
             }
+            ExpressionData::Quote(inner) => {
+                Expression {
+                    data: ExpressionData::Quote(inner),
+                    type_: Some(Box::new(ExpressionData::BuiltinQuote.untyped())),
+                }
+            }
             data @
             ( ExpressionData::BuiltinInt
             | ExpressionData::BuiltinType
+            | ExpressionData::BuiltinQuote
             | ExpressionData::BuiltinString
             | ExpressionData::FunType { .. } ) => Expression {
                 data,
@@ -701,6 +721,7 @@ impl Runtime {
             | ExpressionData::FunType { .. } 
             | ExpressionData::BuiltinInt 
             | ExpressionData::BuiltinString 
+            | ExpressionData::BuiltinQuote
             | ExpressionData::BuiltinType => false,
             ExpressionData::Constructor { name: _, data } => data.iter().all(|arg| self.can_escape(arg)),
             ExpressionData::Fun { body, context, .. } => 
@@ -717,6 +738,7 @@ impl Runtime {
                     }
                 })
             },
+            ExpressionData::Quote(_) => todo!("turn can_escape into escape"),
             ExpressionData::BuiltinFunction { runtime_available, .. } => *runtime_available,
         }
     }
@@ -778,6 +800,8 @@ impl ExpressionData {
             | (_, ED::IntLiteral(_))
             | (ED::StringLiteral(_), _)
             | (_, ED::StringLiteral(_))
+            | (ED::Quote(_), _)
+            | (_, ED::Quote(_))
             | (ED::BuiltinFunction { .. }, _)
             | (_, ED::BuiltinFunction { .. })
             | (ED::Fun { .. }, _)
@@ -821,6 +845,7 @@ impl ExpressionData {
             }
             (ED::BuiltinInt, ED::BuiltinInt) => true,
             (ED::BuiltinString, ED::BuiltinString) => true,
+            (ED::BuiltinQuote, ED::BuiltinQuote) => true,
             _ => false,
         }
     }
@@ -832,11 +857,15 @@ impl ExpressionData {
             ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Const(_) => {
                 panic!("unevaluated expression while checking subtyping")
             }
-            ED::IntLiteral(_)
+            | ED::IntLiteral(_)
             | ED::StringLiteral(_)
             | ED::BuiltinFunction { .. }
+            | ED::Quote(_)
             | ED::Fun { .. } => false,
-            ED::BuiltinInt | ED::BuiltinString | ED::BuiltinType => true,
+            | ED::BuiltinInt
+            | ED::BuiltinString 
+            | ED::BuiltinQuote
+            | ED::BuiltinType => true,
             ED::Constructor { name: _, data } => data
                 .iter()
                 .all(|field| ExpressionData::is_type(&field.data)),
@@ -859,21 +888,24 @@ fn find_unbound_variables<'a>(
     expr: &'a Expression,
     bound: HashSet<&'a String>,
 ) -> HashSet<&'a String> {
+    use ExpressionData as ED;
+
     match &expr.data {
-        ExpressionData::IntLiteral(_)
-        | ExpressionData::StringLiteral(_)
-        | ExpressionData::BuiltinFunction { .. }
-        | ExpressionData::BuiltinInt
-        | ExpressionData::BuiltinString
-        | ExpressionData::BuiltinType => HashSet::new(),
-        ExpressionData::Identifier(name) => {
+        ED::IntLiteral(_)
+        | ED::StringLiteral(_)
+        | ED::BuiltinFunction { .. }
+        | ED::BuiltinInt
+        | ED::BuiltinString
+        | ED::BuiltinQuote
+        | ED::BuiltinType => HashSet::new(),
+        ED::Identifier(name) => {
             if bound.contains(&name) {
                 HashSet::new()
             } else {
                 HashSet::from([name])
             }
         }
-        ExpressionData::Constructor { name: _, data } => {
+        ED::Constructor { name: _, data } => {
             let mut found = HashSet::new();
 
             for field in data {
@@ -884,7 +916,7 @@ fn find_unbound_variables<'a>(
 
             found
         }
-        ExpressionData::Call { func, args } => {
+        ED::Call { func, args } => {
             let mut found = find_unbound_variables(func, bound.clone());
 
             for field in args {
@@ -895,7 +927,7 @@ fn find_unbound_variables<'a>(
 
             found
         }
-        ExpressionData::Fun {
+        ED::Fun {
             args,
             return_type: _,
             body,
@@ -908,7 +940,7 @@ fn find_unbound_variables<'a>(
 
             find_unbound_variables(body, subbound)
         }
-        ExpressionData::Block { statements } => {
+        ED::Block { statements } => {
             let mut subbound = bound.clone();
             let mut found = HashSet::new();
 
@@ -931,8 +963,9 @@ fn find_unbound_variables<'a>(
 
             found
         }
-        ExpressionData::Const(inner) => find_unbound_variables(inner, bound),
-        ExpressionData::FunType {
+        ED::Const(inner) => find_unbound_variables(inner, bound),
+        ED::Quote(_) => todo!("find unbound variables in unquotes"),
+        ED::FunType {
             args,
             return_type,
         } => {
