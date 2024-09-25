@@ -6,7 +6,7 @@ TODO:
         interpolate unquotes
         (keep as quote block)
     - quote block escape
-        - can_escape(&Expr) -> bool ==> escape(Expr) -> Option<Expr>
+        - can_escape(&Expr) -> bool ==> escape(Expr) -> Option < Expr >
         - if block contains zero/one expression,
             escape as single expression
         - if block contains statements,

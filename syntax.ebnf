@@ -13,6 +13,7 @@ list(X) = newline*, ( X, newline*, (",", newline*, X, newline*)* )?, ","?, newli
 
 statement = expression
           | let_statement
+          | const_statement
 
 expression = integer
            | string
