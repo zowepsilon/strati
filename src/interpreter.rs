@@ -3,7 +3,7 @@ use std::{
     iter,
 };
 
-use crate::ast::{BindingKind, Expression, ExpressionData, Program, Statement};
+use crate::ast::{BindingKind, Expression, ExpressionData, Ident, Program, Statement};
 
 #[derive(Debug)]
 struct ConstState {
@@ -164,7 +164,10 @@ impl Runtime {
             },
             ED::Quote(inner) => {
                 if self.const_state.is_some() {
-                    todo!("quote block evaluation")
+                    Expression {
+                        data: ED::Quote(inner.into_iter().map(|stmt| self.interpolate_statement(stmt)).collect()),
+                        type_: expr.type_,
+                    }
                 } else {
                     panic!("quote expression {} cannot be evaluated at runtime", ExpressionData::Quote(inner))
                 }
@@ -699,6 +702,108 @@ impl Runtime {
         }
     }
 
+    fn interpolate_ident(&self, ident: Ident) -> Ident {
+        Ident::Plain(match ident {
+            Ident::Plain(var) => var,
+            Ident::Splice(name) => match self.get_variable(&name) {
+                    Expression { data: ExpressionData::StringLiteral(value), .. } => value,
+                    other => panic!("{} cannot be used to interpolate ${name} in variable name", other.data),
+            }
+        })
+    }
+
+    fn interpolate_statement(&self, stmt: Statement) -> Statement {
+        match stmt {
+            Statement::Binding { kind, variable, annotation, value } => {
+                Statement::Binding {
+                    kind,
+                    variable: self.interpolate_ident(variable),
+                    annotation: annotation.map(|a| self.interpolate_expression(a)),
+                    value: self.interpolate_expression(value),
+                }
+            },
+            Statement::Expression(expr) => Statement::Expression(self.interpolate_expression(expr)),
+        }
+    }
+
+    fn interpolate_expression(&self, expr: Expression) -> Expression {
+        use ExpressionData as ED;
+
+        match expr.data {
+            ED::Splice(name) => {
+                let value = self.get_variable(&name);
+                // TODO: escape value
+                value
+            },
+            ED::Constructor { name, data } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Constructor {
+                        name: name.map(|n| self.interpolate_ident(n)),
+                        data: data.into_iter().map(|arg| self.interpolate_expression(arg)).collect()
+                    }
+                }
+            },
+            ED::Fun { args, return_type, body, context } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Fun {
+                        args: args.into_iter().map(|(name, ty)| (self.interpolate_ident(name), self.interpolate_expression(ty))).collect(),
+                        return_type: return_type.map(|ty| Box::new(self.interpolate_expression(*ty))),
+                        body: Box::new(self.interpolate_expression(*body)),
+                        context, // context should not exist at this phase
+                    }
+                }
+            },
+            ED::Call { func, args } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Call {
+                        func: Box::new(self.interpolate_expression(*func)),
+                        args: args.into_iter().map(|arg| self.interpolate_expression(arg)).collect(),
+                    }
+                }
+            },
+            ED::Block { statements } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Block {
+                        statements: statements.into_iter().map(|stmt| self.interpolate_statement(stmt)).collect(),
+                    }
+                }
+            },
+            ED::Const(inner) => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Const(Box::new(self.interpolate_expression(*inner)))
+                }
+            },
+            ED::Quote(statements) => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Quote(statements.into_iter().map(|stmt| self.interpolate_statement(stmt)).collect()),
+                }
+            },
+            ED::FunType { args, return_type } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::FunType {
+                        args: args.into_iter().map(|arg| self.interpolate_expression(arg)).collect(),
+                        return_type: return_type.map(|ty| Box::new(self.interpolate_expression(*ty)))
+                    }
+                }
+            },
+            | ED::IntLiteral(_)
+            | ED::StringLiteral(_)
+            | ED::Identifier(_) 
+            | ED::BuiltinInt 
+            | ED::BuiltinString 
+            | ED::BuiltinType 
+            | ED::BuiltinQuote 
+            | ED::BuiltinFunction { .. } => expr,
+        }
+    }
+
     fn can_escape(&self, expr: &Expression) -> bool {
         if TRACE { dbg!("can_escape", expr); }
         match &expr.data {
@@ -882,6 +987,7 @@ fn find_unbound_variables<'a>(
 ) -> HashSet<&'a String> {
     use ExpressionData as ED;
 
+
     match &expr.data {
         | ED::IntLiteral(_)
         | ED::StringLiteral(_)
@@ -890,8 +996,7 @@ fn find_unbound_variables<'a>(
         | ED::BuiltinString
         | ED::BuiltinQuote
         | ED::BuiltinType => HashSet::new(),
-        ED::Splice(name) => unreachable!("find_bound_variables on splice ${name}"),
-        ED::Identifier(name) => {
+        ED::Identifier(name) | ED::Splice(name) => {
             if bound.contains(&name) {
                 HashSet::new()
             } else {
@@ -957,7 +1062,7 @@ fn find_unbound_variables<'a>(
             found
         }
         ED::Const(inner) => find_unbound_variables(inner, bound),
-        ED::Quote(_) => todo!("find unbound variables in unquotes"),
+        ED::Quote(_) => unbound_in_quote(expr, bound),
         ED::FunType {
             args,
             return_type,
@@ -971,6 +1076,157 @@ fn find_unbound_variables<'a>(
             }
 
             found.extend(find_unbound_variables(
+                return_type
+                    .as_ref()
+                    .expect("expression should have return type"),
+                bound,
+            ));
+            found
+        }
+    }
+}
+
+fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> HashSet<&'a String> {
+    use ExpressionData as ED;
+
+    match &expr.data {
+        | ED::IntLiteral(_)
+        | ED::StringLiteral(_)
+        | ED::BuiltinFunction { .. }
+        | ED::BuiltinInt
+        | ED::BuiltinString
+        | ED::BuiltinQuote
+        | ED::BuiltinType
+        | ED::Identifier(_)
+            => HashSet::new(),
+        ED::Splice(name) => {
+            if bound.contains(&name) {
+                HashSet::new()
+            } else {
+                HashSet::from([name])
+            }
+        }
+        ED::Constructor { name, data } => {
+            let mut found = match name {
+                Some(Ident::Splice(name)) => HashSet::from([name]),
+                _ => HashSet::new(),
+            };
+
+            for field in data {
+                let subfound = unbound_in_quote(field, bound.clone());
+                found.extend(subfound.into_iter());
+            }
+
+            found
+        }
+        ED::Call { func, args } => {
+            let mut found = unbound_in_quote(func, bound.clone());
+
+            for field in args {
+                let subfound = unbound_in_quote(field, bound.clone());
+                found.extend(subfound.into_iter());
+            }
+
+            found
+        }
+        ED::Fun {
+            args,
+            return_type,
+            body,
+            context: _,
+        } => {
+            let mut subbound = bound.clone();
+            for (name, ty) in args {
+                match name {
+                    Ident::Plain(_) => (),
+                    Ident::Splice(name) => { subbound.insert(name); },
+                };
+
+                subbound.extend(unbound_in_quote(ty, subbound.clone()));
+            }
+
+            if let Some(return_type) = return_type {
+                subbound.extend(unbound_in_quote(return_type, subbound.clone()));
+            }
+
+            unbound_in_quote(body, subbound)
+        }
+        ED::Block { statements } => {
+            let mut subbound = bound.clone();
+            let mut found = HashSet::new();
+
+            for stmt in statements {
+                match stmt {
+                    Statement::Binding {
+                        kind: _,
+                        variable,
+                        annotation,
+                        value,
+                    } => {
+                        match variable {
+                            Ident::Plain(_) => (),
+                            Ident::Splice(name) => { subbound.insert(&name); },
+                        };
+
+                        if let Some(annotation) = annotation {
+                            subbound.extend(unbound_in_quote(annotation, subbound.clone()));
+                        }
+
+                        subbound.extend(unbound_in_quote(value, subbound.clone()))
+                    }
+                    Statement::Expression(value) => {
+                        found.extend(unbound_in_quote(value, subbound.clone()));
+                    }
+                }
+            }
+
+            found
+        }
+        ED::Const(inner) => unbound_in_quote(inner, bound),
+        ED::Quote(statements) => {
+            let mut subbound = bound.clone();
+            let mut found = HashSet::new();
+
+            for stmt in statements {
+                match stmt {
+                    Statement::Binding {
+                        kind: _,
+                        variable,
+                        annotation,
+                        value,
+                    } => {
+                        match variable {
+                            Ident::Plain(_) => (),
+                            Ident::Splice(name) => { subbound.insert(&name); },
+                        };
+
+                        if let Some(annotation) = annotation {
+                            subbound.extend(unbound_in_quote(annotation, subbound.clone()));
+                        }
+
+                        subbound.extend(unbound_in_quote(value, subbound.clone()))
+                    }
+                    Statement::Expression(value) => {
+                        found.extend(unbound_in_quote(value, subbound.clone()));
+                    }
+                }
+            }
+
+            found
+        }
+        ED::FunType {
+            args,
+            return_type,
+        } => {
+            let mut found = HashSet::new();
+
+            for field in args {
+                let subfound = unbound_in_quote(field, bound.clone());
+
+                found.extend(subfound.into_iter());
+            }
+
+            found.extend(unbound_in_quote(
                 return_type
                     .as_ref()
                     .expect("expression should have return type"),

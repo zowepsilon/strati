@@ -15,6 +15,7 @@ TODO:
             and flatten tagged block expressions
             if evaluated as statement
 
+- or types
 - add match
     - int, string, constructors patterns
     - binding patterns
@@ -22,4 +23,4 @@ TODO:
 - lazily parse paren token trees at function calls
 - allow passing tokens in const functions
 - parse tree patterns
-- hygiensple ?
+- hygiene ?

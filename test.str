@@ -1,23 +1,12 @@
-const id = fun ($T: Type) {
-    fun (x: T) -> T {
-        x
+const f = fun() {
+    let x = 42
+    let varname = "neat"
+    quote {
+        let $varname = hello($x)
+        $varname 
+        // TODO: find a way to discrimate between
+        // strings and interpolated identifiers
     }
 }
 
-const $x = id(Int)
-
-let th = const { idint }
-
-const t = 0
-let t = th(const { t })
-
-$hello
-
-add($woo, $it, $works)
-
-const { quote {
-    let $x = 42
-    print("hello")
-} }
-
-id(Int)(t)
+f()
