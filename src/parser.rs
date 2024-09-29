@@ -237,6 +237,7 @@ impl Parser {
         Some(
             ExpressionData::Block {
                 statements: inner.statements()?,
+                flatten: false,
             }
             .untyped(),
         )

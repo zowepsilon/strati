@@ -37,6 +37,7 @@ pub enum ExpressionData {
     },
     Block {
         statements: Vec<Statement>,
+        flatten: bool,
     },
     Const(Box<Expression>),
     Quote(Vec<Statement>),
@@ -180,11 +181,11 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             }
-            ED::Block { statements } => {
+            ED::Block { statements, flatten: _ } => {
                 if statements.is_empty() {
-                    write!(f, "quote {{}}")
+                    write!(f, "{{}}")
                 } else {
-                    write!(f, "quote {{")?;
+                    write!(f, "{{")?;
                     for stmt in statements {
                         write!(
                             f,
@@ -201,9 +202,9 @@ impl std::fmt::Display for ExpressionData {
             ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
             ED::Quote(inner) => {
                 if inner.is_empty() {
-                    write!(f, "{{}}")
+                    write!(f, "quote {{}}")
                 } else {
-                    write!(f, "{{")?;
+                    write!(f, "quote {{")?;
                     for stmt in inner {
                         write!(
                             f,

@@ -91,7 +91,7 @@ impl Runtime {
                     body,
                     context,
                 } => {
-                    let ED::Block { statements } = body.data else {
+                    let ED::Block { statements, flatten: _ } = body.data else {
                         panic!("the parser guarantees that the function body is a block")
                     };
 
@@ -124,7 +124,7 @@ impl Runtime {
                 }
                 _ => panic!("type error: expected closure value"),
             },
-            ED::Block { statements } => {
+            ED::Block { statements, flatten: _ } => {
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
 
@@ -295,7 +295,7 @@ impl Runtime {
                 body,
                 context,
             } => {
-                let ED::Block { statements } = body.data else {
+                let ED::Block { statements, flatten } = body.data else {
                     panic!("the parser guarantees that the function body is a block")
                 };
 
@@ -344,10 +344,9 @@ impl Runtime {
                 let mut typed_statements = Vec::new();
                 let mut last_type = None;
                 for stmt in statements {
-                    let (stmt, type_) = self.type_statement(stmt);
-
-                    typed_statements.push(stmt);
-                    last_type = type_;
+                    if let Some(ty) = self.type_statement(stmt, &mut typed_statements) {
+                        last_type = ty;
+                    }
                 }
 
                 self.const_state
@@ -369,6 +368,7 @@ impl Runtime {
                 let body = Expression {
                     data: ED::Block {
                         statements: typed_statements,
+                        flatten,
                     },
                     type_: Some(Box::new(return_type.clone())),
                 };
@@ -389,56 +389,6 @@ impl Runtime {
                     )),
                 }
             },
-            /*
-                ExpressionData::Fun {
-                    is_const: true,
-                    args,
-                    return_type,
-                    body,
-                    context,
-                } => {
-                    let ExpressionData::Block { statements } = body.data else {
-                        panic!("the parser guarantees that the function body is a block")
-                    };
-
-                    let args: Vec<_> = args
-                        .into_iter()
-                        .map(|(name, type_)| {
-                            let type_ = self.evaluate(type_);
-                            assert!(type_.data.is_type());
-
-                            (name, type_)
-                        })
-                        .collect();
-                    let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
-
-                    // code in non-const function bodies executed at const time have block-like scoping
-                    let body = Expression {
-                        data: ExpressionData::Block {
-                            statements,
-                        },
-                        type_: return_type.clone(),
-                    };
-
-                    Expression {
-                        data: ExpressionData::Fun {
-                            is_const: false,
-                            args,
-                            return_type: return_type.clone(),
-                            body: Box::new(body),
-                            context,
-                        },
-                        type_: Some(Box::new(
-                            ExpressionData::FunType {
-                                is_const: true,
-                                args: arg_types,
-                                return_type,
-                            }
-                            .untyped(),
-                        )),
-                    }
-                },
-            */
             ED::Call { func, args: parameters } => {
                 if let ED::Identifier(func) = &func.data {
                     if let Some(func) = self.scopes.last().expect("current scope should exist").get(func) {
@@ -449,6 +399,10 @@ impl Runtime {
                             }
                             .untyped(),
                         );
+
+                        let result = self.escape(result.clone()).unwrap_or_else(|| {
+                            panic!("type error: {} cannot escape const time", result.data);
+                        });
 
                         return self.type_expression(result);
                     }
@@ -497,7 +451,7 @@ impl Runtime {
                     },
                 }
             }
-            ED::Block { statements } => {
+            ED::Block { statements, flatten } => {
                 let context = self
                     .const_state
                     .as_mut()
@@ -520,10 +474,9 @@ impl Runtime {
                 let mut typed_statements = Vec::new();
                 let mut last_type = None;
                 for stmt in statements {
-                    let (stmt, type_) = self.type_statement(stmt);
-
-                    typed_statements.push(stmt);
-                    last_type = type_;
+                    if let Some(ty) = self.type_statement(stmt, &mut typed_statements) {
+                        last_type = ty;
+                    }
                 }
 
                 self.const_state
@@ -538,6 +491,7 @@ impl Runtime {
                 Expression {
                     data: ED::Block {
                         statements: typed_statements,
+                        flatten,
                     },
                     type_: Some(Box::new(return_type)),
                 }
@@ -545,13 +499,13 @@ impl Runtime {
             ED::Const(inner) => {
                 let inner = self.evaluate(*inner);
 
-                let inner = self.type_expression(inner);
                 
-                if !self.can_escape(&inner) {
+                let inner = self.escape(inner.clone()).unwrap_or_else(|| {
                     panic!("type error: {} cannot escape const time", inner.data);
-                }
+                });
 
-                inner
+                self.type_expression(inner)
+
             }
             ED::Quote(inner) => {
                 Expression {
@@ -594,7 +548,7 @@ impl Runtime {
             .clone()
     }
 
-    fn type_statement(&mut self, stmt: Statement) -> (Statement, Option<Expression>) {
+    fn type_statement(&mut self, stmt: Statement, typed_statements: &mut Vec<Statement>) -> Option<Option<Expression>> {
         match stmt {
             Statement::Expression(expr) => {
                 let expr = self.type_expression(expr);
@@ -603,7 +557,19 @@ impl Runtime {
                     .clone()
                     .expect("expression should have been typed");
 
-                (Statement::Expression(expr), Some(*type_))
+                if let ExpressionData::Block { flatten: true, statements } = expr.data {
+                    let mut last_type = None;
+                    for stmt in statements {
+                        if let Some(ty) = self.type_statement(stmt, typed_statements) {
+                            last_type = ty;
+                        }
+                    }
+                    Some(last_type)
+                } else {
+                    typed_statements.push(Statement::Expression(expr));
+                    Some(Some(*type_))
+                }
+
             }
             Statement::Binding { kind: BindingKind::Let, variable, annotation, value } => match annotation {
                 Some(annotation) => {
@@ -625,14 +591,14 @@ impl Runtime {
                         .expect("current scope should exist")
                         .insert(variable.plain_ref().clone(), annotation.clone());
 
-                    let stmt = Statement::Binding {
+                    typed_statements.push(Statement::Binding {
                         kind: BindingKind::Let,
                         variable,
                         annotation: Some(annotation.clone()),
                         value,
-                    };
+                    });
 
-                    (stmt, None)
+                    Some(None)
                 }
                 None => {
                     let value = self.type_expression(value);
@@ -646,14 +612,14 @@ impl Runtime {
                         .expect("current scope should exist")
                         .insert(variable.plain_ref().clone(), *type_);
 
-                    let stmt = Statement::Binding {
+                    typed_statements.push(Statement::Binding {
                         kind: BindingKind::Let,
                         variable,
                         annotation: None,
                         value,
-                    };
+                    });
 
-                    (stmt, None)
+                    Some(None)
                 }
             },
 
@@ -678,14 +644,7 @@ impl Runtime {
                         .expect("current scope should exist")
                         .insert(variable.plain_ref().clone(), value.clone());
 
-                    let stmt = Statement::Binding {
-                        kind: BindingKind::Const,
-                        variable,
-                        annotation: Some(annotation.clone()),
-                        value,
-                    };
-
-                    (stmt, None)
+                    None
                 }
                 None => {
                     let value = self.evaluate(value);
@@ -696,7 +655,7 @@ impl Runtime {
                         .expect("current scope should exist")
                         .insert(variable.plain_ref().clone(), value.clone());
 
-                    (Statement::Expression(ExpressionData::unit().untyped()), None)
+                    None
                 }
             },
         }
@@ -764,11 +723,12 @@ impl Runtime {
                     }
                 }
             },
-            ED::Block { statements } => {
+            ED::Block { statements, flatten } => {
                 Expression {
                     type_: expr.type_,
                     data: ED::Block {
                         statements: statements.into_iter().map(|stmt| self.interpolate_statement(stmt)).collect(),
+                        flatten,
                     }
                 }
             },
@@ -804,39 +764,111 @@ impl Runtime {
         }
     }
 
-    fn can_escape(&self, expr: &Expression) -> bool {
-        if TRACE { dbg!("can_escape", expr); }
-        match &expr.data {
+    fn escape(&self, expr: Expression) -> Option<Expression> {
+        if TRACE { dbg!("can_escape", &expr); }
+        
+        // FIXME: should types be escaped?
+
+        match expr.data {
             | ExpressionData::IntLiteral(_)
             | ExpressionData::Identifier(_) // TODO: escape before type checking
                                             // at this stage the expression was already
                                             // type-checked, so we know this variable is available
                                             // at runtime
-            | ExpressionData::StringLiteral(_) => true,
+            | ExpressionData::StringLiteral(_) => Some(expr),
             | ExpressionData::Const(_) 
             | ExpressionData::FunType { .. } 
             | ExpressionData::Splice(_)
             | ExpressionData::BuiltinInt 
             | ExpressionData::BuiltinString 
             | ExpressionData::BuiltinQuote
-            | ExpressionData::BuiltinType => false,
-            ExpressionData::Constructor { name: _, data } => data.iter().all(|arg| self.can_escape(arg)),
-            ExpressionData::Fun { body, context, .. } => 
-                context.values().all(|val| self.can_escape(val))
-                || self.can_escape(body),
-            ExpressionData::Call { func, args } =>
-                self.can_escape(func)
-                || args.iter().all(|arg| self.can_escape(arg)),
-            ExpressionData::Block { statements } => {
-                statements.iter().all(|stmt| {
-                    match stmt {
-                        | Statement::Binding { value, .. }
-                        | Statement::Expression(value) => self.can_escape(value),
+            | ExpressionData::BuiltinType => None,
+            ExpressionData::Constructor { name, data } => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Constructor {
+                        name,
+                        data: {
+                            let mut escaped = Vec::with_capacity(data.len());
+                            for arg in data {
+                                escaped.push(self.escape(arg)?);
+                            }
+                            escaped
+                        }
                     }
                 })
             },
-            ExpressionData::Quote(_) => todo!("turn can_escape into escape"),
-            ExpressionData::BuiltinFunction { runtime_available, .. } => *runtime_available,
+            ExpressionData::Fun { body, context, args, return_type } => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Fun {
+                        body: Box::new(self.escape(*body)?),
+                        context: {
+                            let mut escaped = HashMap::with_capacity(context.len());
+
+                            for (key, value) in context {
+                                escaped.insert(key, self.escape(value)?);
+                            }
+
+                            escaped
+                        },
+                        args,
+                        return_type,
+                    }
+                })
+            }
+            ExpressionData::Call { func, args } => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Call {
+                        func: Box::new(self.escape(*func)?),
+                        args: {
+                            let mut escaped = Vec::with_capacity(args.len());
+                            for arg in args {
+                                escaped.push(self.escape(arg)?);
+                            }
+                            escaped
+                        }
+                    }
+                })
+            }
+            ExpressionData::Block { statements, flatten } => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Block {
+                        flatten,
+                        statements: {
+                            let mut escaped = Vec::with_capacity(statements.len());
+
+                            for stmt in statements {
+                                match stmt {
+                                    Statement::Binding { kind, variable, annotation, value } => {
+                                        escaped.push(Statement::Binding { kind, variable, annotation, value: self.escape(value)?, })
+                                    },
+                                    Statement::Expression(expr) =>
+                                        escaped.push(Statement::Expression(self.escape(expr)?)),
+                                }
+                            }
+                            escaped
+                        }
+                    }
+                })
+            },
+            ExpressionData::Quote(inner) => {
+                Some(Expression {
+                    type_: None,
+                    data: ExpressionData::Block {
+                        statements: inner,
+                        flatten: true,
+                    }
+                })
+            },
+            data @ ExpressionData::BuiltinFunction { runtime_available, .. } =>
+                if runtime_available {
+                    Some(Expression { data, type_: expr.type_ })
+                } else {
+                    None
+                }
         }
     }
 }
@@ -845,6 +877,7 @@ impl Program {
     pub fn interpret(self) {
         let root = ExpressionData::Block {
             statements: self.root,
+            flatten: false,
         }
         .untyped();
 
@@ -1038,7 +1071,7 @@ fn find_unbound_variables<'a>(
 
             find_unbound_variables(body, subbound)
         }
-        ED::Block { statements } => {
+        ED::Block { statements, flatten: _ } => {
             let mut subbound = bound.clone();
             let mut found = HashSet::new();
 
@@ -1151,7 +1184,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
 
             unbound_in_quote(body, subbound)
         }
-        ED::Block { statements } => {
+        ED::Block { statements, flatten: _ } => {
             let mut subbound = bound.clone();
             let mut found = HashSet::new();
 

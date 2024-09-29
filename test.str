@@ -2,8 +2,8 @@ const f = fun() {
     let x = 42
     let varname = "neat"
     quote {
-        let $varname = hello($x)
-        $varname 
+        let $varname = ($x)
+        .($x, $x)
         // TODO: find a way to discrimate between
         // strings and interpolated identifiers
     }
