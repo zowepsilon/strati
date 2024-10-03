@@ -15,6 +15,8 @@ TODO:
             and flatten tagged block expressions
             if evaluated as statement
 
+- recursive types/functions
+- add identifier type
 - or types
 - add match
     - int, string, constructors patterns

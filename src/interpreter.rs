@@ -498,7 +498,6 @@ impl Runtime {
             }
             ED::Const(inner) => {
                 let inner = self.evaluate(*inner);
-
                 
                 let inner = self.escape(inner.clone()).unwrap_or_else(|| {
                     panic!("type error: {} cannot escape const time", inner.data);
@@ -662,11 +661,13 @@ impl Runtime {
     }
 
     fn interpolate_ident(&self, ident: Ident) -> Ident {
+        if TRACE { eprintln!("interpolating {ident:?}"); }
+
         Ident::Plain(match ident {
             Ident::Plain(var) => var,
             Ident::Splice(name) => match self.get_variable(&name) {
-                    Expression { data: ExpressionData::StringLiteral(value), .. } => value,
-                    other => panic!("{} cannot be used to interpolate ${name} in variable name", other.data),
+                Expression { data: ExpressionData::StringLiteral(value), .. } => value,
+                other => panic!("{} cannot be used to interpolate ${name} in variable name", other.data),
             }
         })
     }
@@ -686,6 +687,8 @@ impl Runtime {
     }
 
     fn interpolate_expression(&self, expr: Expression) -> Expression {
+        if TRACE { eprintln!("interpolating {expr:?}"); }
+
         use ExpressionData as ED;
 
         match expr.data {
@@ -1139,11 +1142,8 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                 HashSet::from([name])
             }
         }
-        ED::Constructor { name, data } => {
-            let mut found = match name {
-                Some(Ident::Splice(name)) => HashSet::from([name]),
-                _ => HashSet::new(),
-            };
+        ED::Constructor { name: _, data } => {
+            let mut found = HashSet::new();
 
             for field in data {
                 let subfound = unbound_in_quote(field, bound.clone());
