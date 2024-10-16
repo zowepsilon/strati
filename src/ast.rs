@@ -12,7 +12,7 @@ pub enum Ident {
     Splice(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExpressionData {
     IntLiteral(String),
     StringLiteral(String),
@@ -55,21 +55,22 @@ pub enum ExpressionData {
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
         runtime_available: bool,
     },
+    Thunk(usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Expression {
     pub data: ExpressionData,
     pub type_: Option<Box<Expression>>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BindingKind {
     Let,
     Const,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Binding {
         kind: BindingKind,
@@ -108,6 +109,15 @@ impl ExpressionData {
         ExpressionData::Constructor {
             name: None,
             data: Vec::new(),
+        }
+    }
+}
+
+impl Expression {
+    pub fn unit_typed() -> Expression {
+        Expression {
+            data: ExpressionData::unit(),
+            type_: Some(Box::new(ExpressionData::unit().untyped())),
         }
     }
 }
@@ -231,6 +241,7 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             }
+            ED::Thunk(id) => write!(f, "$thunk({id})"),
             ED::BuiltinInt => write!(f, "$Int"),
             ED::BuiltinString => write!(f, "$String"),
             ED::BuiltinType => write!(f, "$Type"),
