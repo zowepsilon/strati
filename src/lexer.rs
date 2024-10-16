@@ -22,7 +22,7 @@ pub enum TokenData {
     // keywords
     Let,
     Fun,
-    Fn,
+    FunType,
     Struct,
     Underscore,
     Const,
@@ -101,7 +101,7 @@ impl<'a> Lexer<'a> {
                     data: match content.as_str() {
                         "let" => TokenData::Let,
                         "fun" => TokenData::Fun,
-                        "fn" => TokenData::Fn,
+                        "Fun" => TokenData::FunType,
                         "struct" => TokenData::Struct,
                         "_" => TokenData::Underscore,
                         "const" => TokenData::Const,
@@ -297,7 +297,7 @@ impl Display for TokenData {
             TD::Assign => write!(f, "= "),
             TD::Let => write!(f, "let "),
             TD::Fun => write!(f, "fun "),
-            TD::Fn => write!(f, "fn "),
+            TD::FunType => write!(f, "Fun "),
             TD::Struct => write!(f, "struct "),
             TD::Underscore => write!(f, "_"),
             TD::Const => write!(f, "const"),

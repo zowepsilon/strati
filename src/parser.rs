@@ -129,7 +129,7 @@ impl Parser {
         }
 
         let mut expr = match self.tokens.peek()?.data {
-            TokenData::Fn => self.fntype_expression(),
+            TokenData::FunType => self.fntype_expression(),
             TokenData::Fun => self.fun_expression(),
             TokenData::Integer(_) => {
                 let Some(Token {
@@ -394,7 +394,7 @@ impl Parser {
             dbg!("fun_expression", self.tokens.peek());
         }
 
-        expect!(self, TokenData::Fn)?;
+        expect!(self, TokenData::FunType)?;
 
         let Some(Token {
             data: TokenData::ParenBlock(inner),

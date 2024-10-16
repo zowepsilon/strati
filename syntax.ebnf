@@ -23,7 +23,7 @@ expression = integer
            | block
            | expression, "(", list(expression), ")"
            | fun_expression
-           | fntype_expression
+           | funtype_expression
            | constructor
            | "const", block
            | "quote", block
@@ -41,7 +41,7 @@ fun_expression = "fun", "(",
            list((identifier | splice), annotation), ")", 
            "->", expression, block_expression
 
-fntype_expression = "fn", "(", list(expression), ")", "->", expression
+funtype_expression = "Fun", "(", list(expression), ")", "->", expression
 
 constructor = ".", (identifier | splice)?, ("(", list(expression), ")")?
 

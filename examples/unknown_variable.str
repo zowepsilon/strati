@@ -1,0 +1,7 @@
+let x = 42
+
+let f = fun (y: Int) -> Int {
+    z // Oops.
+}
+
+f(x)

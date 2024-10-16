@@ -1,4 +1,4 @@
-const f = fun() {
+const f = fun () {
     Int
 }
 

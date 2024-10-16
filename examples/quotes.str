@@ -1,0 +1,21 @@
+const assert_is = fun (T: Type) {
+    fun (x: T) {}
+}
+
+const create_variable = fun(name: String, value: .) {
+    quote {
+        let $name = $value
+        let just_created = $name // TODO: split interpolated identifiers and string literals
+
+        assert_is(Int)($value)
+    }
+}
+
+create_variable("abc", 42)
+
+assert_is(Int)(abc)
+assert_is(String)(just_created) // no hygiene
+
+const { quote { 42 } }
+
+.Result(abc, just_created)

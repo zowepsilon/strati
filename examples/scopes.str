@@ -5,7 +5,11 @@ const assert_is = fun (T: Type) {
 let x = 42
 
 const Crate = .Box(String)
-const Group = (Int, Fun(Int, Int) -> Int)
+const Group = .Group(
+    Int,                    // identity
+    Fun(Int, Int) -> Int,   // operation
+    Fun(Int) -> Int         // inverse
+)
 
 let my_box = .Box("some food")
 
@@ -21,3 +25,11 @@ let f = {
         x
     }
 }
+
+let z = f() // "hello"
+
+let not_a_group: Group = .Group(
+    42,
+    fun(x: Int, y: Int) -> Int { x },
+    fun(x: Int) -> Int { x }
+)

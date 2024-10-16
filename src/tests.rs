@@ -54,6 +54,7 @@ fn a_string() {
 
 #[test]
 fn a_fun() {
+
     assert_eq!(
         run_program("examples/a_fun.str"),
         E {
@@ -88,13 +89,44 @@ fn a_fun() {
 }
 
 #[test]
-#[should_panic]
+fn id() {
+    run_program("examples/id.str");
+}
+
+#[test]
+#[should_panic(expected = "assertion failed: type_.data.is_type(self)")]
 fn id_not_a_type() {
     run_program("examples/id_not_a_type.str");
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "$Int is not a subtype of $String")]
 fn id_mismatched_types() {
     run_program("examples/id_mismatched_types.str");
+}
+
+#[test]
+fn scopes() {
+    run_program("examples/scopes.str");
+}
+
+#[test]
+fn stage_scoping() {
+    run_program("examples/stage_scoping.str");
+}
+
+#[test]
+#[should_panic(expected = "type error: unknown variable z")]
+fn unknown_variable() {
+    run_program("examples/unknown_variable.str");
+}
+
+#[test]
+fn quotes() {
+    run_program("examples/quotes.str");
+}
+
+#[test]
+fn dyn_typing() {
+    run_program("examples/dyn_typing.str");
 }

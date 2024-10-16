@@ -1,0 +1,12 @@
+const assert_is = fun (T: Type) {
+    fun (x: T) {}
+}
+
+const x = "aaa"
+let x = 42
+
+assert_is(Int)(x)
+const { assert_is(String)(x) }
+
+let x = const { x }
+assert_is(String)(x)
