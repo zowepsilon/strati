@@ -1,0 +1,5 @@
+const f = fun() {
+    Int
+}
+
+let x: f() = 69

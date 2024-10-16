@@ -55,6 +55,7 @@ pub enum ExpressionData {
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
         runtime_available: bool,
     },
+    #[allow(unused)] // TODO: use
     Thunk(usize),
 }
 

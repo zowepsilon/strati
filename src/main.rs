@@ -17,7 +17,7 @@ fn run_program(filename: &str) -> ast::Expression {
     let tokens = Lexer::new(&source).lex().expect("lexing error");
     
     let program = Parser::new(tokens).parse().expect("parsing error");
-    
+
     program.interpret()
 }
 

@@ -7,6 +7,7 @@ use crate::ast::{Expression, ExpressionData, Ident, Program, Statement};
 use crate::stage1::ConstState;
 
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub enum ThunkKind { Function, Type }
 

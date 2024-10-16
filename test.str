@@ -1,13 +1,1 @@
-
-const f = fun() {
-    let x = 42
-    let varname = "neat"
-    quote {
-        let $varname = ($x)
-        .$varname($x, $x)
-        // TODO: find a way to discrimate between
-        // strings and interpolated identifiers
-    }
-}
-
-f()
+let x = .(1, 42)

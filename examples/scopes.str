@@ -1,0 +1,23 @@
+const assert_is = fun (T: Type) {
+    fun (x: T) {}
+}
+
+let x = 42
+
+const Crate = .Box(String)
+const Group = (Int, Fun(Int, Int) -> Int)
+
+let my_box = .Box("some food")
+
+assert_is(Int)(x)
+assert_is(Crate)(my_box)
+
+let f = {
+    let x = "hello"
+
+    assert_is(String)(x)
+
+    fun () -> String {
+        x
+    }
+}
