@@ -164,11 +164,6 @@ impl Runtime {
             ED::Call { func, args: parameters } => {
                 if let ED::Identifier(func) = &func.data {
                     if let Some(func) = self.scopes.last().expect("current scope should exist").get(func) {
-                        let func = func.clone();
-
-                        let parameters: Vec<_> =
-                            parameters.into_iter().map(|p| self.evaluate(p, None)).collect();
-
                         let result = self.evaluate(
                             ED::Call {
                                 func: Box::new(func.clone()),
@@ -199,7 +194,7 @@ impl Runtime {
                     .map(|arg| self.type_expression(arg))
                     .collect();
 
-                assert_eq!(args.len(), parameters.len(), "invalid argument count");
+                assert_eq!(args.len(), parameters.len(), "type error: invalid argument count");
 
                 for (arg, param) in iter::zip(args, parameters.iter()) {
                     let param_type = &param
