@@ -75,6 +75,7 @@ pub enum BindingKind {
 pub enum Statement {
     Binding {
         kind: BindingKind,
+        recursive: bool,
         variable: Ident,
         annotation: Option<Expression>,
         value: Expression,
@@ -259,6 +260,7 @@ impl std::fmt::Display for Statement {
         match self {
             Statement::Binding {
                 kind,
+                recursive,
                 variable,
                 annotation,
                 value,
@@ -266,6 +268,10 @@ impl std::fmt::Display for Statement {
                 match kind {
                     BindingKind::Let => write!(f, "let")?,
                     BindingKind::Const => write!(f, "const")?,
+                }
+
+                if *recursive {
+                    write!(f, "rec ")?;
                 }
 
                 write!(f, " {variable}")?;

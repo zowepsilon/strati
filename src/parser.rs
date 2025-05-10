@@ -318,6 +318,14 @@ impl Parser {
             BindingKind::Let => expect!(self, TokenData::Let)?,
             BindingKind::Const => expect!(self, TokenData::Const)?,
         }
+
+        let recursive = match self.tokens.peek()?.data {
+            TokenData::Rec => {
+                let _ = self.tokens.next();
+                true
+            },
+            _ => false,
+        };
         
         let variable = self.ident()?;
 
@@ -332,6 +340,7 @@ impl Parser {
 
         Some(Statement::Binding {
             kind,
+            recursive,
             variable,
             annotation,
             value,

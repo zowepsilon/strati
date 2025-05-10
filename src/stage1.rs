@@ -346,7 +346,7 @@ impl Runtime {
                 }
 
             }
-            Statement::Binding { kind: BindingKind::Let, variable, annotation, value } => match annotation {
+            Statement::Binding { kind: BindingKind::Let, recursive, variable, annotation, value } => match annotation {
                 Some(annotation) => {
                     let annotation = self.evaluate(annotation, None);
                     let value = self.type_expression(value);
@@ -368,6 +368,7 @@ impl Runtime {
 
                     typed_statements.push(Statement::Binding {
                         kind: BindingKind::Let,
+                        recursive,
                         variable,
                         annotation: Some(annotation.clone()),
                         value,
@@ -389,6 +390,7 @@ impl Runtime {
 
                     typed_statements.push(Statement::Binding {
                         kind: BindingKind::Let,
+                        recursive,
                         variable,
                         annotation: None,
                         value,
@@ -398,8 +400,8 @@ impl Runtime {
                 }
             },
 
-            Statement::Binding {
-                kind: BindingKind::Const, variable, annotation, value,
+            Statement::Binding { // TODO: add recursion here
+                kind: BindingKind::Const, recursive, variable, annotation, value,
             } => match annotation {
                 Some(annotation) => {
                     let annotation = self.evaluate(annotation, None);
@@ -450,9 +452,10 @@ impl Runtime {
 
     pub fn interpolate_statement(&self, stmt: Statement) -> Statement {
         match stmt {
-            Statement::Binding { kind, variable, annotation, value } => {
+            Statement::Binding { kind, recursive, variable, annotation, value } => {
                 Statement::Binding {
                     kind,
+                    recursive,
                     variable: self.interpolate_ident(variable),
                     annotation: annotation.map(|a| self.interpolate_expression(a)),
                     value: self.interpolate_expression(value),
@@ -622,8 +625,8 @@ impl Runtime {
 
                             for stmt in statements {
                                 match stmt {
-                                    Statement::Binding { kind, variable, annotation, value } => {
-                                        escaped.push(Statement::Binding { kind, variable, annotation, value: self.escape(value)?, })
+                                    Statement::Binding { kind, recursive, variable, annotation, value } => {
+                                        escaped.push(Statement::Binding { kind, recursive, variable, annotation, value: self.escape(value)?, })
                                     },
                                     Statement::Expression(expr) =>
                                         escaped.push(Statement::Expression(self.escape(expr)?)),

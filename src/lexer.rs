@@ -27,6 +27,7 @@ pub enum TokenData {
     Underscore,
     Const,
     Quote,
+    Rec,
 
     // specials
     NewLine,
@@ -106,6 +107,7 @@ impl<'a> Lexer<'a> {
                         "_" => TokenData::Underscore,
                         "const" => TokenData::Const,
                         "quote" => TokenData::Quote,
+                        "rec" => TokenData::Rec,
                         _ => TokenData::Identifier(content),
                     },
                     pos: start_position,
@@ -302,6 +304,7 @@ impl Display for TokenData {
             TD::Underscore => write!(f, "_"),
             TD::Const => write!(f, "const"),
             TD::Quote => write!(f, "quote"),
+            TD::Rec => write!(f, "rec"),
             TD::NewLine => writeln!(f),
             TD::ThinArrow => write!(f, " -> "),
             TD::Identifier(name) => write!(f, "{name} "),

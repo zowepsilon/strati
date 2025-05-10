@@ -208,6 +208,7 @@ impl Runtime {
             Statement::Expression(expr) => Some(self.evaluate(expr, None)),
             Statement::Binding {
                 kind: _,
+                recursive, // TODO: implement recursion
                 variable,
                 annotation: _,
                 value,
@@ -291,6 +292,7 @@ impl Program {
             const_state: None,
             thunks: Vec::new(),
         };
+
         rt.evaluate(root, None)
     }
 }
@@ -360,11 +362,17 @@ pub fn find_unbound_variables<'a>(
                 match stmt {
                     Statement::Binding {
                         kind: _,
+                        recursive,
                         variable,
                         annotation: _,
                         value,
                     } => {
-                        found.extend(find_unbound_variables(value, subbound.clone()));
+                        let mut value_scope = subbound.clone();
+                        if *recursive {
+                            value_scope.insert(variable.plain_ref());
+                        }
+
+                        found.extend(find_unbound_variables(value, value_scope));
                         subbound.insert(variable.plain_ref());
                     }
                     Statement::Expression(value) => {
@@ -471,6 +479,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                 match stmt {
                     Statement::Binding {
                         kind: _,
+                        recursive,
                         variable,
                         annotation,
                         value,
@@ -481,10 +490,15 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                         };
 
                         if let Some(annotation) = annotation {
-                            subbound.extend(unbound_in_quote(annotation, subbound.clone()));
+                            found.extend(unbound_in_quote(annotation, subbound.clone()));
                         }
 
-                        subbound.extend(unbound_in_quote(value, subbound.clone()))
+                        let mut value_scope = subbound.clone();
+                        if *recursive {
+                            value_scope.insert(variable.plain_ref());
+                        }
+
+                        found.extend(unbound_in_quote(value, value_scope));
                     }
                     Statement::Expression(value) => {
                         found.extend(unbound_in_quote(value, subbound.clone()));
@@ -503,6 +517,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                 match stmt {
                     Statement::Binding {
                         kind: _,
+                        recursive,
                         variable,
                         annotation,
                         value,
@@ -513,10 +528,16 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                         };
 
                         if let Some(annotation) = annotation {
-                            subbound.extend(unbound_in_quote(annotation, subbound.clone()));
+                            found.extend(unbound_in_quote(annotation, subbound.clone()));
                         }
 
-                        subbound.extend(unbound_in_quote(value, subbound.clone()))
+                        let mut value_scope = subbound.clone();
+                        if *recursive {
+                            value_scope.insert(variable.plain_ref());
+                        }
+
+                        found.extend(unbound_in_quote(value, value_scope));
+
                     }
                     Statement::Expression(value) => {
                         found.extend(unbound_in_quote(value, subbound.clone()));

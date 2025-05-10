@@ -34,8 +34,8 @@ statements = newline*, (statement, newline)*, statement, newline?
 annotation = ":", expression
 splice = "$", identifier
 
-let_statement = "let",     (identifier | splice), annotation?, "=", expression
-const_statement = "const", (identifier | splice), annotation?, "=", expression
+let_statement = "let",     "rec"?, (identifier | splice), annotation?, "=", expression
+const_statement = "const", "rec"?, (identifier | splice), annotation?, "=", expression
 
 fun_expression = "fun", "(",
            list((identifier | splice), annotation), ")", 
