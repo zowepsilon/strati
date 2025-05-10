@@ -70,7 +70,6 @@ impl Runtime {
                 let ED::Block { statements, flatten } = body.data else {
                     panic!("the parser guarantees that the function body is a block")
                 };
-
                 let args: Vec<_> = args
                     .into_iter()
                     .map(|(name, type_)| {
@@ -205,7 +204,7 @@ impl Runtime {
 
                     assert!(
                         param_type.is_subtype_of(&arg.data, self),
-                        "{} is not a subtype of {}",
+                        "type error: {} is not a subtype of {}",
                         param_type,
                         arg.data
                     );
@@ -289,7 +288,7 @@ impl Runtime {
                 data: ED::Thunk(id),
                 type_: self.thunks[id].value.type_.clone(),
             },
-            ED::Splice(name) => panic!("cannot type splice ${name}"),
+            ED::Splice(name) => panic!("type error: cannot type splice ${name}"),
             data @
             ( ED::BuiltinInt
             | ED::BuiltinType
@@ -410,7 +409,7 @@ impl Runtime {
 
                     assert!(
                         value.type_.as_ref().expect("value should have been typed").data.is_subtype_of(&annotation.data, self),
-                        "{} is not a subtype of {}",
+                        "type error: {} is not a subtype of {}",
                         value.type_.expect("value should have been typed").data,
                         annotation.data
                     );
@@ -444,7 +443,7 @@ impl Runtime {
             Ident::Plain(var) => var,
             Ident::Splice(name) => match self.get_variable(&name) {
                 Expression { data: ExpressionData::StringLiteral(value), .. } => value,
-                other => panic!("{} cannot be used to interpolate ${name} in variable name", other.data),
+                other => panic!("type error: {} cannot be used to interpolate ${name} in variable name", other.data),
             }
         })
     }
@@ -660,7 +659,7 @@ impl ExpressionData {
         use ExpressionData as ED;
 
         match (self, other) {
-            (ED::Identifier(_), _)
+            | (ED::Identifier(_), _)
             | (_, ED::Identifier(_))
             | (ED::Call { .. }, _)
             | (_, ED::Call { .. })
@@ -668,7 +667,7 @@ impl ExpressionData {
             | (_, ED::Block { .. })
             | (ED::Const(_), _)
             | (_, ED::Const(_)) => panic!("unevaluated expression while checking subtyping"),
-            (ED::IntLiteral(_), _)
+            | (ED::IntLiteral(_), _)
             | (_, ED::IntLiteral(_))
             | (ED::StringLiteral(_), _)
             | (_, ED::StringLiteral(_))
@@ -715,14 +714,14 @@ impl ExpressionData {
                 && self_ret.as_ref().expect("self should have return type").data
                     .is_subtype_of(&other_ret.as_ref().expect("self should have return type").data, rt)
             }
-            (ED::BuiltinInt, ED::BuiltinInt) => true,
-            (ED::BuiltinString, ED::BuiltinString) => true,
-            (ED::BuiltinQuote, ED::BuiltinQuote) => true,
+            | (ED::BuiltinInt, ED::BuiltinInt)
+            | (ED::BuiltinString, ED::BuiltinString)
+            | (ED::BuiltinQuote, ED::BuiltinQuote) => true,
             _ => false,
         }
     }
 
-    fn is_type(&self, rt: &Runtime) -> bool {
+    pub fn is_type(&self, rt: &Runtime) -> bool {
         use ExpressionData as ED;
 
         match self {
@@ -760,4 +759,3 @@ impl ExpressionData {
         }
     }
 }
-

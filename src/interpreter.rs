@@ -29,19 +29,24 @@ pub struct Runtime {
 pub const TRACE: bool = false;
 
 impl Runtime {
-    fn new(is_const: bool) -> Runtime {
-        Runtime {
-            scopes: vec![HashMap::new()],
-            const_state:
-                if is_const {
-                    Some(ConstState {
-                        scopes: vec![HashMap::new()],
-                    })
-                } else {
-                    None
+    #[expect(unused)] // TODO: remove this
+    fn add_builtin_function(
+        &mut self,
+        name: &'static str,
+        handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
+        type_: Expression,
+        runtime_available: bool,
+    ) {
+        self.scopes
+            .last_mut()
+            .expect("current scope should exist")
+            .insert(
+                name.to_string(),
+                Expression {
+                    data: ExpressionData::BuiltinFunction { name, handler, runtime_available },
+                    type_: Some(Box::new(type_)),
                 },
-            thunks: Vec::new(),
-        }
+            );
     }
 }
 
@@ -228,61 +233,64 @@ impl Runtime {
             .clone()
     }
 
-    #[allow(unused)] // TODO: remove this
-    fn add_builtin_function(
-        &mut self,
-        name: &'static str,
-        handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
-        type_: Expression,
-        runtime_available: bool,
-    ) {
-        self.scopes
-            .last_mut()
-            .expect("current scope should exist")
-            .insert(
-                name.to_string(),
-                Expression {
-                    data: ExpressionData::BuiltinFunction { name, handler, runtime_available },
-                    type_: Some(Box::new(type_)),
-                },
-            );
-    }
 }
 
 impl Program {
     pub fn interpret(self) -> Expression {
-        let root = ExpressionData::Block {
+        use ExpressionData as ED;
+
+
+        let mut meta_rt = Runtime {
+            scopes: vec![HashMap::from([
+                ("Int"   .to_string(), ED::BuiltinInt   .untyped()),
+                ("String".to_string(), ED::BuiltinString.untyped()),
+                ("Type"  .to_string(), ED::BuiltinType  .untyped()),
+                ("dump"  .to_string(), ED::BuiltinFunction {
+                    name: "dump",
+                    runtime_available: false,
+                    handler: |rt, args| {
+                        assert_eq!(args.len(), 1, "dump: invalid argument count");
+                        assert!(args[0].data.is_type(rt), "dump: argument must be a type");
+
+                        Expression {
+                            type_: Some(Box::new(ED::FunType { args: vec![args[0].clone()], return_type: Some(Box::new(ED::unit().untyped())) }.untyped())),
+                            data: ED::BuiltinFunction {
+                                name: "dump_impl",
+                                runtime_available: true,
+                                handler: |rt, args| {
+                                    assert!(rt.const_state.is_none(), "cannot call dump at stage 1. no side effects are allowed at this stage");
+
+                                    assert_eq!(args.len(), 1, "dump_impl: invalid argument count");
+
+                                    println!("{}", args[0].data);
+
+                                    Expression::unit_typed()
+                                }
+                            }
+
+                        }
+                    }
+                }.untyped())
+            ])],
+            const_state: Some(ConstState { scopes: vec![ HashMap::new() ] }),
+            thunks: Vec::new(),
+        };
+
+
+        let root = ED::Block {
             statements: self.root,
             flatten: false,
-        }
-        .untyped();
-
-        let mut meta_rt = Runtime::new(true);
-
-        meta_rt
-            .scopes
-            .last_mut()
-            .expect("root scope should exist")
-            .insert("Int".to_string(), ExpressionData::BuiltinInt.untyped());
-        meta_rt
-            .scopes
-            .last_mut()
-            .expect("root scope should exist")
-            .insert(
-                "String".to_string(),
-                ExpressionData::BuiltinString.untyped(),
-            );
-        meta_rt
-            .scopes
-            .last_mut()
-            .expect("root scope should exist")
-            .insert("Type".to_string(), ExpressionData::BuiltinType.untyped());
+        }.untyped();
 
         let root = meta_rt.type_expression(root);
 
-        if TRACE { println!("{}", root.data); }
+        if false { println!("{}", root.data); }
 
-        let mut rt = Runtime::new(false);
+        let mut rt = Runtime {
+            scopes: vec![ HashMap::new() ],
+            const_state: None,
+            thunks: Vec::new(),
+        };
         rt.evaluate(root, None)
     }
 }
@@ -292,7 +300,6 @@ pub fn find_unbound_variables<'a>(
     bound: HashSet<&'a String>,
 ) -> HashSet<&'a String> {
     use ExpressionData as ED;
-
 
     match &expr.data {
         | ED::IntLiteral(_)

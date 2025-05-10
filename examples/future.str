@@ -1,0 +1,42 @@
+const while = fun ($tokens) {
+    match tokens {
+        quote { [$($cap:Ident),*] $cond:Expr $body:Block } -> quote {
+            let {
+
+            let __loop = fun ($( $cap: TypeOf($cap), )*) -> .( $(TypeOf($cap),)* ) {
+                match $cond {
+                    .False -> .( $($cap, )* )
+                    .True -> {
+                        $body
+                        __loop($($cap, )*)
+                    }
+                }
+            }
+
+            __loop( $($cap, )* )
+        }}
+    }
+}
+
+let i = 0
+let a = 1
+while [i, a] (i < 5) {
+    let i = i + 1
+    let a = a * a
+}
+
+// -->
+
+let (i, a) = {
+    let loop = fun (i: int, a: int) {
+        if !(i < 5) {
+            (i, a)
+        } else {
+            let i = i + 1
+            let a = a * a
+            loop(i, a)
+        }
+    }
+    
+    loop(i, a)
+}

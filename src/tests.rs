@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::ast::{
+    self,
     Expression as E,
+    ExpressionData,
     ExpressionData::*,
     Ident,
     Statement as Stmt
@@ -20,10 +22,60 @@ trait Utils: Sized {
 }
 impl<T> Utils for T {}
 
+macro_rules! value {
+    (i $x:literal) => {
+        ExpressionData::IntLiteral($x.to_string()).untyped()
+    };
+
+    (s $x:literal) => {
+        ExpressionData::StringLiteral($x.into()).untyped()
+    };
+
+    (# $x:ident) => {
+        ExpressionData::Splice(stringify!($x)).untyped()
+    };
+
+    (. $( ($($sub:tt)*) )* ) => {
+        ExpressionData::Constructor {
+            name: None,
+            data: vec![$( value!( $($sub)* ) ),*]
+        }.untyped()
+    };
+    
+    (. $name:ident $( ($($sub:tt)*) )* ) => {
+        ExpressionData::Constructor {
+            name: Some(ast::Ident::Plain(stringify!($name).to_string())),
+            data: vec![$( value!( $($sub)* ) ),*]
+        }.untyped()
+    };
+}
+
+pub fn assert_value_eq(x: E, y: E) {
+    use ExpressionData as ED;
+
+    match (x.data, y.data) {
+        (ED::IntLiteral(x), ED::IntLiteral(y)) => assert_eq!(x.parse::<i64>(), y.parse::<i64>()),
+        (ED::StringLiteral(x), ED::StringLiteral(y)) => assert_eq!(x, y),
+        (ED::Splice(x), ED::Splice(y)) => assert_eq!(x, y),
+        (ED::Constructor {name: name1, data: data1}, ED::Constructor {name: name2, data: data2}) => {
+            assert_eq!(name1, name2);
+
+            for (x, y) in std::iter::zip(data1, data2) {
+                assert_value_eq(x, y);
+            }
+        },
+        | (ED::BuiltinInt, ED::BuiltinInt)
+        | (ED::BuiltinType, ED::BuiltinType)
+        | (ED::BuiltinString, ED::BuiltinString)
+        | (ED::BuiltinQuote, ED::BuiltinQuote) => (),
+        (expected, got) => assert_eq!(expected, got),
+    }
+}
+
 #[test]
 fn empty() {
     assert_eq!(
-        run_program(&format!("examples/{}.str", stringify!(empty))),
+        run_program(&format!("examples/empty.str")),
         (E::unit_typed())
     );
 }
@@ -54,7 +106,6 @@ fn a_string() {
 
 #[test]
 fn a_fun() {
-
     assert_eq!(
         run_program("examples/a_fun.str"),
         E {
@@ -90,7 +141,11 @@ fn a_fun() {
 
 #[test]
 fn id() {
-    run_program("examples/id.str");
+    let expected = value!(
+        . (s "hello") (.Things (s "abc") (i 42))
+    );
+
+    assert_value_eq(run_program("examples/id.str"), expected);
 }
 
 #[test]
@@ -100,19 +155,19 @@ fn id_not_a_type() {
 }
 
 #[test]
-#[should_panic(expected = "$Int is not a subtype of $String")]
+#[should_panic(expected = "type error: $Int is not a subtype of $String")]
 fn id_mismatched_types() {
     run_program("examples/id_mismatched_types.str");
 }
 
 #[test]
 fn scopes() {
-    run_program("examples/scopes.str");
+    assert_value_eq(run_program("examples/scopes.str"), value!(.));
 }
 
 #[test]
 fn stage_scoping() {
-    run_program("examples/stage_scoping.str");
+    assert_value_eq(run_program("examples/stage_scoping.str"), value!(.));
 }
 
 #[test]
@@ -123,10 +178,15 @@ fn unknown_variable() {
 
 #[test]
 fn quotes() {
-    run_program("examples/quotes.str");
+    assert_value_eq(run_program("examples/quotes.str"), value!(.Result (i 42) (s "abc") ))
 }
 
 #[test]
 fn dyn_typing() {
-    run_program("examples/dyn_typing.str");
+    assert_value_eq(run_program("examples/dyn_typing.str"), value!(.));
+}
+
+#[test]
+fn hello_world() {
+    assert_value_eq(run_program("examples/hello_world.str"), value!(.));
 }

@@ -1,8 +1,11 @@
+//const id = fun (T: Type) -> (Fun(T) -> T) {
 const id = fun (T: Type) {
     fun (x: T) -> T { x }
 }
 
-let x = id(String)("hello ❦")
+//let x = id(42)
+
+let x = const { id(String) }("hello")
 let things = .Things("abc", 42)
 let y = id( .Things(String, Int) )(things)
 // let z = id("this is not a type")(78)
