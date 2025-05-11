@@ -11,22 +11,36 @@ newline = "\n"
 
 list(X) = newline*, ( X, newline*, (",", newline*, X, newline*)* )?, ","?, newline*
 
-statement = expression
-          | let_statement
-          | const_statement
+statement =
+    | expression
+    | let_statement
+    | const_statement
 
-expression = integer
-           | string
-           | identifier
-           | splice
-           | "(", newline*, expression, newline*, ")"
-           | block
-           | expression, "(", list(expression), ")"
-           | fun_expression
-           | funtype_expression
-           | constructor
-           | "const", block
-           | "quote", block
+expression = equality
+
+equality = sum
+         | sum, '==', equality
+
+sum = term
+    | term, '|', sum
+
+term = primary
+     | primary, '+', term
+
+primary =
+    | integer
+    | string
+    | identifier
+    | splice
+    | "(", newline*, expression, newline*, ")"
+    | block
+    | expression, "(", list(expression), ")"
+    | fun_expression
+    | funtype_expression
+    | pipe_expression
+    | constructor
+    | "const", block
+    | "quote", block
 
 block = "{", statements, "}"
 statements = newline*, (statement, newline)*, statement, newline?
@@ -34,7 +48,7 @@ statements = newline*, (statement, newline)*, statement, newline?
 annotation = ":", expression
 splice = "$", identifier
 
-let_statement = "let",     "rec"?, (identifier | splice), annotation?, "=", expression
+let_statement   = "let",   "rec"?, (identifier | splice), annotation?, "=", expression
 const_statement = "const", "rec"?, (identifier | splice), annotation?, "=", expression
 
 fun_expression = "fun", "(",

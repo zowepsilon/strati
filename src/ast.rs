@@ -39,12 +39,15 @@ pub enum ExpressionData {
         statements: Vec<Statement>,
         flatten: bool,
     },
+    Equal(Box<Expression>, Box<Expression>),
+    Add(Box<Expression>, Box<Expression>),
     Const(Box<Expression>),
     Quote(Vec<Statement>),
     FunType {
         args: Vec<Expression>,
         return_type: Option<Box<Expression>>,
     },
+    SumType(Box<Expression>, Box<Expression>),
     // internal, unparsable expressions
     BuiltinInt,
     BuiltinString,
@@ -55,7 +58,6 @@ pub enum ExpressionData {
         handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
         runtime_available: bool,
     },
-    #[allow(unused)] // TODO: use
     Thunk(usize),
 }
 
@@ -243,6 +245,9 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             }
+            ED::Equal(left, right) => write!(f, "{} == {}", left.data, right.data),
+            ED::SumType(left, right) => write!(f, "{} | {}", left.data, right.data),
+            ED::Add(left, right) => write!(f, "{} + {}", left.data, right.data),
             ED::Thunk(id) => write!(f, "$thunk({id})"),
             ED::BuiltinInt => write!(f, "$Int"),
             ED::BuiltinString => write!(f, "$String"),

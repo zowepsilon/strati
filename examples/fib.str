@@ -1,9 +1,11 @@
 let x = 42
 
-let rec f: Fun() = fun() {
-    dump(Int)(x)
+const t = Int | String
+
+let rec f: Fun(Int) = fun(y: Int) {
+    dump(Int)(y)
     
-    f()
+    f(y+1)
 }
 
-f()
+//f(1)

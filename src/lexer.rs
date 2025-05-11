@@ -11,8 +11,10 @@ pub enum TokenData {
     Dollar,
     Dot,
     ThinArrow,
-
     Assign,
+    Pipe,
+    Equal,
+    Plus,
 
     // literals
     Identifier(String),
@@ -228,7 +230,13 @@ impl<'a> Iterator for Lexer<'a> {
                 ',' => self.token(Comma),
                 '$' => self.token(Dollar),
                 '.' => self.token(Dot),
-                '=' => self.token(Assign),
+                '|' => self.token(Pipe),
+                '+' => self.token(Plus),
+                '=' => two_char_token!(
+                    '=',
+                    self.token(Assign),
+                    self.token(Equal)
+                ),
                 '-' => two_char_token!(
                     '>', 
                     {
@@ -296,6 +304,9 @@ impl Display for TokenData {
             TD::Comma => write!(f, ", "),
             TD::Dollar => write!(f, "$"),
             TD::Dot => write!(f, "."),
+            TD::Pipe => write!(f, "| "),
+            TD::Equal => write!(f, "== "),
+            TD::Plus => write!(f, "+ "),
             TD::Assign => write!(f, "= "),
             TD::Let => write!(f, "let "),
             TD::Fun => write!(f, "fun "),

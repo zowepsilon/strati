@@ -103,6 +103,27 @@ impl Parser {
     }
 }
 
+macro_rules! binary_operator {
+    ($name:ident, $token:pat, $child:ident, $rule:expr) => {
+        fn $name(&mut self) -> Option<Expression> {
+            let mut expr = self.$child()?;
+
+            loop {
+                match self.tokens.peek() {
+                    Some(Token { data: $token, .. }) => {
+                        let _ = self.tokens.next();
+                        let right = self.$child()?;
+
+                        expr = $rule(Box::new(expr), Box::new(right)).untyped();
+                    }
+                    _ => break,
+                }
+            }
+            Some(expr)
+        }
+    };
+}
+
 // doc: see syntax.ebnf
 impl Parser {
     fn statement(&mut self) -> Option<Statement> {
@@ -123,7 +144,11 @@ impl Parser {
         }
     }
 
-    fn expression(&mut self) -> Option<Expression> {
+    binary_operator!(expression, TokenData::Equal, sum, ExpressionData::Equal);
+    binary_operator!(sum, TokenData::Pipe, term, ExpressionData::SumType);
+    binary_operator!(term, TokenData::Plus, primary, ExpressionData::Add);
+
+    fn primary(&mut self) -> Option<Expression> {
         if TRACE {
             dbg!("expression", self.tokens.peek().unwrap());
         }

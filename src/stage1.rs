@@ -61,6 +61,48 @@ impl Runtime {
                     )),
                 }
             }
+            ED::Add(left, right) => {
+                let left = self.type_expression(*left);
+                let right = self.type_expression(*right);
+
+                let left_type = left.type_.as_ref().expect("expression should have been typed");
+                let right_type = right.type_.as_ref().expect("expression should have been typed");
+
+                assert!(
+                    left_type.data.is_subtype_of(&ED::BuiltinInt, self),
+                    "type error: {} is not a subtype of Int",
+                    left_type.data
+                );
+
+                assert!(
+                    right_type.data.is_subtype_of(&ED::BuiltinInt, self),
+                    "type error: {} is not a subtype of Int",
+                    right_type.data
+                );
+
+                Expression {
+                    data: ED::Add(Box::new(left), Box::new(right)),
+                    type_: Some(Box::new(ED::BuiltinInt.untyped())),
+                }
+            }
+            ED::Equal(left, right) => {
+                let left = self.type_expression(*left);
+                let right = self.type_expression(*right);
+
+                Expression {
+                    data: ED::Equal(Box::new(left), Box::new(right)),
+                    type_: Some(Box::new(ED::unit().untyped()))
+                }
+            },
+            ED::SumType(left, right) => {
+                let left = self.type_expression(*left);
+                let right = self.type_expression(*right);
+
+                Expression {
+                    data: ED::SumType(Box::new(left), Box::new(right)),
+                    type_: Some(Box::new(ED::unit().untyped()))
+                }
+            }
             ED::Fun {
                 args,
                 return_type,
@@ -470,6 +512,33 @@ impl Runtime {
                     }
                 }
             },
+            ED::Add(left, right) => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Add(
+                        Box::new(self.interpolate_expression(*left)), 
+                        Box::new(self.interpolate_expression(*right))
+                    )
+                }
+            }
+            ED::Equal(left, right) => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Equal(
+                        Box::new(self.interpolate_expression(*left)), 
+                        Box::new(self.interpolate_expression(*right))
+                    )
+                }
+            }
+            ED::SumType(left, right) => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::SumType(
+                        Box::new(self.interpolate_expression(*left)), 
+                        Box::new(self.interpolate_expression(*right))
+                    )
+                }
+            }
             ED::Fun { args, return_type, body, context } => {
                 Expression {
                     type_: expr.type_,
@@ -566,6 +635,24 @@ impl Runtime {
                     }
                 })
             },
+            ExpressionData::Add(left, right) => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Add(Box::new(self.escape(*left)?), Box::new(self.escape(*right)?))
+                })
+            }
+            ExpressionData::Equal(left, right) => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Equal(Box::new(self.escape(*left)?), Box::new(self.escape(*right)?))
+                })
+            }
+            ExpressionData::SumType(left, right) => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::SumType(Box::new(self.escape(*left)?), Box::new(self.escape(*right)?))
+                })
+            }
             ExpressionData::Fun { body, context, args, return_type } => {
                 Some(Expression {
                     type_: expr.type_,
@@ -713,7 +800,14 @@ impl ExpressionData {
         use ExpressionData as ED;
 
         match self {
-            ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Const(_) | ED::Splice(_) => {
+            | ED::Identifier(_)
+            | ED::Call { .. }
+            | ED::Block { .. } 
+            | ED::Const(_) 
+            | ED::Splice(_)
+            | ED::Add(_, _)
+            | ED::SumType(_, _)
+            | ED::Equal(_, _) => {
                 panic!("unevaluated expression while checking subtyping")
             }
             | ED::IntLiteral(_)

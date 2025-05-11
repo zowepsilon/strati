@@ -148,6 +148,37 @@ impl Runtime {
 
                 last_value.unwrap_or_else(|| Expression::unit_typed())
             }
+            ED::Add(left, right) => {
+                let left = self.evaluate(*left);
+                let right = self.evaluate(*right);
+
+                match (left.data, right.data) {
+                    (ED::IntLiteral(x), ED::IntLiteral(y)) => {
+                        let x = x.parse::<i64>().unwrap();
+                        let y = y.parse::<i64>().unwrap();
+
+                        Expression {
+                            data: ED::IntLiteral((x+y).to_string()),
+                            type_: Some(Box::new(ED::BuiltinInt.untyped()))
+                        }
+                    }
+                    (l, r) => panic!("tried adding {l} and {r}"),
+                }
+            }
+            ED::Equal(left, right) => {
+                let left = self.evaluate(*left);
+                let right = self.evaluate(*right);
+                
+                // TODO: equality
+                Expression::unit_typed()
+            }
+            ED::SumType(left, right) => {
+                let left = self.evaluate(*left);
+                let right = self.evaluate(*right);
+                
+                // TODO: sum type evaluation
+                Expression::unit_typed()
+            }
             ED::FunType { args, return_type } => {
                 if self.const_state.is_some() {
                     let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
@@ -372,6 +403,14 @@ pub fn find_unbound_variables<'a>(
 
             found
         }
+        | ED::Add(left, right)
+        | ED::Equal(left, right)
+        | ED::SumType(left, right) => {
+            let mut found = find_unbound_variables(left, bound.clone());
+            found.extend(find_unbound_variables(right, bound).into_iter());
+
+            found
+        }
         ED::Call { func, args } => {
             let mut found = find_unbound_variables(func, bound.clone());
 
@@ -478,6 +517,14 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                 let subfound = unbound_in_quote(field, bound.clone());
                 found.extend(subfound.into_iter());
             }
+
+            found
+        }
+        | ED::Add(left, right)
+        | ED::Equal(left, right)
+        | ED::SumType(left, right) => {
+            let mut found = unbound_in_quote(left, bound.clone());
+            found.extend(unbound_in_quote(right, bound).into_iter());
 
             found
         }
