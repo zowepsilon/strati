@@ -73,38 +73,6 @@ pub fn assert_value_eq(x: E, y: E) {
 }
 
 #[test]
-fn empty() {
-    assert_eq!(
-        run_program(&format!("examples/empty.str")),
-        (E::unit_typed())
-    );
-}
-
-#[test]
-fn an_int() {
-    assert_eq!(
-        run_program("examples/an_int.str"),
-        (E {
-            data: IntLiteral("42".to_string()),
-            type_: BuiltinInt.untyped().boxed().some(),
-        })
-    );
-}
-
-#[test]
-fn a_string() {
-    use crate::ast::ExpressionData::*;
-
-    assert_eq!(
-        run_program("examples/a_string.str"),
-        (E {
-            data: StringLiteral("Hello there!".to_string()),
-            type_: BuiltinString.untyped().boxed().some(),
-        })
-    );
-}
-
-#[test]
 fn a_fun() {
     assert_eq!(
         run_program("examples/a_fun.str"),
@@ -140,6 +108,53 @@ fn a_fun() {
 }
 
 #[test]
+fn a_string() {
+    use crate::ast::ExpressionData::*;
+
+    assert_eq!(
+        run_program("examples/a_string.str"),
+        (E {
+            data: StringLiteral("Hello there!".to_string()),
+            type_: BuiltinString.untyped().boxed().some(),
+        })
+    );
+}
+
+#[test]
+fn an_int() {
+    assert_eq!(
+        run_program("examples/an_int.str"),
+        (E {
+            data: IntLiteral("42".to_string()),
+            type_: BuiltinInt.untyped().boxed().some(),
+        })
+    );
+}
+
+#[test]
+fn dyn_typing() {
+    assert_value_eq(run_program("examples/dyn_typing.str"), value!(.));
+}
+
+#[test]
+fn empty() {
+    assert_eq!(
+        run_program(&format!("examples/empty.str")),
+        (E::unit_typed())
+    );
+}
+
+#[test]
+fn fib() {
+    assert_value_eq(run_program("examples/fib.str"), value!(.));
+}
+
+#[test]
+fn hello_world() {
+    assert_value_eq(run_program("examples/hello_world.str"), value!(.));
+}
+
+#[test]
 fn id() {
     let expected = value!(
         . (s "hello") (.Things (s "abc") (i 42))
@@ -149,15 +164,20 @@ fn id() {
 }
 
 #[test]
+#[should_panic(expected = "type error: $Int is not a subtype of $String")]
+fn id_mismatched_types() {
+    run_program("examples/id_mismatched_types.str");
+}
+
+#[test]
 #[should_panic(expected = "assertion failed: type_.data.is_type(self)")]
 fn id_not_a_type() {
     run_program("examples/id_not_a_type.str");
 }
 
 #[test]
-#[should_panic(expected = "type error: $Int is not a subtype of $String")]
-fn id_mismatched_types() {
-    run_program("examples/id_mismatched_types.str");
+fn quotes() {
+    assert_value_eq(run_program("examples/quotes.str"), value!(.Result (i 42) (s "abc") ))
 }
 
 #[test]
@@ -170,23 +190,14 @@ fn stage_scoping() {
     assert_value_eq(run_program("examples/stage_scoping.str"), value!(.));
 }
 
+
+#[test]
+fn sum_types() {
+    assert_value_eq(run_program("examples/sum_types.str"), value!(.));
+}
+
 #[test]
 #[should_panic(expected = "type error: unknown variable z")]
 fn unknown_variable() {
     run_program("examples/unknown_variable.str");
-}
-
-#[test]
-fn quotes() {
-    assert_value_eq(run_program("examples/quotes.str"), value!(.Result (i 42) (s "abc") ))
-}
-
-#[test]
-fn dyn_typing() {
-    assert_value_eq(run_program("examples/dyn_typing.str"), value!(.));
-}
-
-#[test]
-fn hello_world() {
-    assert_value_eq(run_program("examples/hello_world.str"), value!(.));
 }

@@ -1,7 +1,6 @@
+// TODO: actual fibonacci
+
 let rec f: Fun(Int) = fun(y: Int) {
     dump(Int)(y)
-    
     f(y+1)
 }
-
-f(1)
