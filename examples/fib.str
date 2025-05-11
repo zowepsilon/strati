@@ -1,0 +1,9 @@
+let x = 42
+
+let rec f: Fun() = fun() {
+    dump(Int)(x)
+    
+    f()
+}
+
+f()

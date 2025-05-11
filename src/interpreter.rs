@@ -7,14 +7,10 @@ use crate::ast::{Expression, ExpressionData, Ident, Program, Statement};
 use crate::stage1::ConstState;
 
 
-#[allow(unused)]
 #[derive(Debug, Clone)]
-pub enum ThunkKind { Function, Type }
-
-#[derive(Debug, Clone)]
-pub struct Thunk {
-    pub value: Expression,
-    pub kind: ThunkKind,
+pub enum Thunk {
+    Empty,
+    Value(Expression)
 }
 
 #[derive(Debug)]
@@ -52,8 +48,7 @@ impl Runtime {
 
 // runtime/common methods
 impl Runtime {
-    #[expect(unused)]
-    pub fn evaluate(&mut self, expr: Expression, binding: Option<String>) -> Expression {
+    pub fn evaluate(&mut self, expr: Expression) -> Expression {
         if TRACE { eprintln!("evaluate: {}", expr.data) };
 
         use ExpressionData as ED;
@@ -64,7 +59,7 @@ impl Runtime {
             | ED::StringLiteral(_) => expr,
             ED::Identifier(var) => self.get_variable(&var),
             ED::Constructor { name, data } => {
-                let data = data.into_iter().map(|e| self.evaluate(e, None)).collect();
+                let data = data.into_iter().map(|e| self.evaluate(e)).collect();
 
                 Expression {
                     data: ED::Constructor { name, data },
@@ -76,7 +71,7 @@ impl Runtime {
                     find_unbound_variables(&body, args.iter().map(|(name, _)| name.plain_ref()).collect());
                 let context = to_bind
                     .into_iter()
-                    .map(|name| (name.clone(), self.get_variable(name)))
+                    .map(|name| (name.clone(), self.get_raw_variable(name)))
                     .collect();
 
 
@@ -84,10 +79,10 @@ impl Runtime {
                 if self.const_state.is_some() {
                     args =
                         args.into_iter()
-                            .map(|(name, type_)| (name, self.evaluate(type_, None)))
+                            .map(|(name, type_)| (name, self.evaluate(type_)))
                             .collect();
 
-                    return_type = self.evaluate(return_type, None);
+                    return_type = self.evaluate(return_type);
                 }
 
                 Expression {
@@ -100,7 +95,7 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ED::Call { func, args: parameters } => match self.evaluate(*func, None).data {
+            ED::Call { func, args: parameters } => match self.evaluate(*func).data {
                 ED::Fun {
                     args,
                     return_type: _,
@@ -112,7 +107,7 @@ impl Runtime {
                     };
 
                     let parameters: Vec<_> =
-                        parameters.into_iter().map(|p| self.evaluate(p, None)).collect();
+                        parameters.into_iter().map(|p| self.evaluate(p)).collect();
 
                     self.scopes.push(context);
 
@@ -134,10 +129,10 @@ impl Runtime {
                 }
                 ED::BuiltinFunction { handler, .. } => {
                     let parameters: Vec<_> =
-                        parameters.into_iter().map(|p| self.evaluate(p, None)).collect();
+                        parameters.into_iter().map(|p| self.evaluate(p)).collect();
 
                     handler(self, parameters)
-                }
+                },
                 _ => panic!("type error: expected closure value"),
             },
             ED::Block { statements, flatten: _ } => {
@@ -155,10 +150,10 @@ impl Runtime {
             }
             ED::FunType { args, return_type } => {
                 if self.const_state.is_some() {
-                    let args = args.into_iter().map(|arg| self.evaluate(arg, None)).collect();
+                    let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
                     let return_type =
                         return_type.unwrap_or_else(|| Box::new(ExpressionData::unit().untyped()));
-                    let return_type = Some(Box::new(self.evaluate(*return_type, None)));
+                    let return_type = Some(Box::new(self.evaluate(*return_type)));
 
                     Expression {
                         data: ExpressionData::FunType {
@@ -171,10 +166,10 @@ impl Runtime {
                     panic!("fun type {} cannot be evaluated at runtime", ED::FunType{args, return_type})
                 }
             }
-            ED::Thunk(id) => self.evaluate(self.thunks[id].value.clone(), None),
+            ED::Thunk(id) => self.get_thunk(id),
             ED::Const(inner) => {
                 if self.const_state.is_some() {
-                    self.evaluate(*inner, None)
+                    self.evaluate(*inner)
                 } else {
                     panic!("const expression const {} cannot be evaluated at runtime", inner.data)
                 }
@@ -205,15 +200,15 @@ impl Runtime {
 
     pub fn run_statement(&mut self, stmt: Statement) -> Option<Expression> {
         match stmt {
-            Statement::Expression(expr) => Some(self.evaluate(expr, None)),
+            Statement::Expression(expr) => Some(self.evaluate(expr)),
             Statement::Binding {
                 kind: _,
-                recursive, // TODO: implement recursion
+                recursive: false,
                 variable,
                 annotation: _,
                 value,
             } => {
-                let value = self.evaluate(value, Some(variable.to_string()));
+                let value = self.evaluate(value);
 
                 self.scopes
                     .last_mut()
@@ -221,19 +216,66 @@ impl Runtime {
                     .insert(variable.plain(), value);
 
                 None
+            },
+            Statement::Binding {
+                kind: _,
+                recursive: true,
+                variable,
+                annotation: _,
+                value,
+            } => {
+                let id = self.new_thunk(variable.plain_ref().clone());
+                let value = self.evaluate(value);
+
+                self.thunks[id] = Thunk::Value(value);
+
+                None
             }
         }
     }
 
     pub fn get_variable(&self, var: &str) -> Expression {
+        let mut value = self.get_raw_variable(var);
+
+        while let ExpressionData::Thunk(id) = &value.data {
+            value = self.get_thunk(*id);
+        }
+
+        value
+    }
+
+    pub fn get_raw_variable(&self, var: &str) -> Expression {
         self.scopes
             .last()
             .expect("current scope should exist")
             .get(var)
-            .unwrap_or_else(|| panic!("unknown variable {var} at {} time", if self.const_state.is_some() {"const"} else {"run"}))
+            .unwrap_or_else(|| panic!(
+                "unknown variable {var} at {} time", 
+                if self.const_state.is_some() {"const"} else {"run"}
+            ))
             .clone()
     }
+    
+    pub fn new_thunk(&mut self, name: String) -> usize {
+        let id = self.thunks.len();
+        self.thunks.push(Thunk::Empty);
+        self.scopes
+            .last_mut()
+            .expect("current scope should exist")
+            .insert(name, ExpressionData::Thunk(id).untyped());
+        id
+    }
 
+    fn get_thunk(&self, id: usize) -> Expression {
+        match &self.thunks[id] {
+            Thunk::Empty => panic!("trying to access a thunk while it is not evaluated yet"),
+            Thunk::Value(v) => v.clone()
+        }
+    }
+
+    pub fn inherit_scope(&mut self) {
+        self.scopes.push(self.scopes.last().cloned().unwrap_or_default());
+    }
 }
 
 impl Program {
@@ -293,7 +335,7 @@ impl Program {
             thunks: Vec::new(),
         };
 
-        rt.evaluate(root, None)
+        rt.evaluate(root)
     }
 }
 

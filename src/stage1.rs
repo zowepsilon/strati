@@ -2,7 +2,7 @@ use std::iter;
 use std::collections::HashMap;
 
 use crate::ast::{BindingKind, Expression, ExpressionData, Ident, Statement};
-use crate::interpreter::{Runtime, ThunkKind, TRACE};
+use crate::interpreter::{Runtime, Thunk, TRACE};
 
 #[derive(Debug)]
 pub struct ConstState {
@@ -73,33 +73,17 @@ impl Runtime {
                 let args: Vec<_> = args
                     .into_iter()
                     .map(|(name, type_)| {
-                        let type_ = self.evaluate(type_, None);
+                        let type_ = self.evaluate(type_);
                         assert!(type_.data.is_type(self));
 
                         (name, type_)
                     })
                     .collect();
                 let arg_types: Vec<_> = args.iter().map(|(_, type_)| type_.clone()).collect();
-
-                let last_typing_scope = self
-                    .const_state
-                    .as_ref()
-                    .expect("const method called at runtime")
-                    .scopes
-                    .last()
-                    .cloned()
-                    .unwrap_or_default();
-
-                self.const_state
-                    .as_mut()
-                    .expect("const method called at runtime")
-                    .scopes
-                    .push(last_typing_scope);
-
-                // code in non-const function bodies executed at const time have block-like scoping
-                self.scopes
-                    .push(self.scopes.last().cloned().unwrap_or_default());
-
+                
+                self.inherit_const_scope();
+                self.inherit_scope();
+                
                 let current_scope = self
                     .const_state
                     .as_mut()
@@ -132,7 +116,7 @@ impl Runtime {
 
                 let return_type =
                     *return_type.unwrap_or_else(|| Box::new(ED::unit().untyped()));
-                let return_type = self.evaluate(return_type, None);
+                let return_type = self.evaluate(return_type);
 
                 assert!(found_return_type.data.is_subtype_of(&return_type.data, self));
 
@@ -168,8 +152,7 @@ impl Runtime {
                                 func: Box::new(func.clone()),
                                 args: parameters,
                             }
-                            .untyped(),
-                            None,
+                            .untyped()
                         );
 
                         let result = self.escape(result.clone()).unwrap_or_else(|| {
@@ -224,24 +207,8 @@ impl Runtime {
                 }
             }
             ED::Block { statements, flatten } => {
-                let context = self
-                    .const_state
-                    .as_mut()
-                    .expect("const method called at runtime")
-                    .scopes
-                    .last()
-                    .expect("current scope should exist")
-                    .clone();
-
-                self.const_state
-                    .as_mut()
-                    .expect("const method called at runtime")
-                    .scopes
-                    .push(context);
-
-                // code in non-const function bodies executed at const time have block-like scoping
-                self.scopes
-                    .push(self.scopes.last().cloned().unwrap_or_default());
+                self.inherit_const_scope();
+                self.inherit_scope();
 
                 let mut typed_statements = Vec::new();
                 let mut last_type = None;
@@ -269,7 +236,7 @@ impl Runtime {
                 }
             }
             ED::Const(inner) => {
-                let inner = self.evaluate(*inner, None);
+                let inner = self.evaluate(*inner);
                 
                 let inner = self.escape(inner.clone()).unwrap_or_else(|| {
                     panic!("type error: {} cannot escape const time", inner.data);
@@ -284,10 +251,7 @@ impl Runtime {
                     type_: Some(Box::new(ED::BuiltinQuote.untyped())),
                 }
             },
-            ED::Thunk(id) => Expression {
-                data: ED::Thunk(id),
-                type_: self.thunks[id].value.type_.clone(),
-            },
+            ED::Thunk(_) => unreachable!("thunk should never occur at this stage"),
             ED::Splice(name) => panic!("type error: cannot type splice ${name}"),
             data @
             ( ED::BuiltinInt
@@ -323,6 +287,24 @@ impl Runtime {
             .clone()
     }
 
+    fn inherit_const_scope(&mut self) {
+        let last_const_scope = self
+            .const_state
+            .as_ref()
+            .expect("const method called at runtime")
+            .scopes
+            .last()
+            .cloned()
+            .unwrap_or_default();
+
+        self.const_state
+            .as_mut()
+            .expect("const method called at runtime")
+            .scopes
+            .push(last_const_scope);
+    }
+
+
     fn type_statement(&mut self, stmt: Statement, typed_statements: &mut Vec<Statement>) -> Option<Option<Expression>> {
         match stmt {
             Statement::Expression(expr) => {
@@ -346,94 +328,97 @@ impl Runtime {
                 }
 
             }
-            Statement::Binding { kind: BindingKind::Let, recursive, variable, annotation, value } => match annotation {
-                Some(annotation) => {
-                    let annotation = self.evaluate(annotation, None);
-                    let value = self.type_expression(value);
+            Statement::Binding { kind: BindingKind::Let, recursive, variable, annotation, value } => {
+                let annotation = annotation.map(|a| self.evaluate(a));
 
-                    assert!(value
-                        .type_
-                        .as_ref()
-                        .expect("value should have been typed")
-                        .data
-                        .is_subtype_of(&annotation.data, self));
+                let value =
+                    if recursive {
+                        self.inherit_const_scope();
+                        let state = self.const_state.as_mut().expect("const method called at runtime");
 
-                    self.const_state
-                        .as_mut()
-                        .expect("const method called at runtime")
-                        .scopes
-                        .last_mut()
-                        .expect("current scope should exist")
-                        .insert(variable.plain_ref().clone(), annotation.clone());
+                        let last_scope = state.scopes.last_mut().expect("current scope should exist");
 
-                    typed_statements.push(Statement::Binding {
-                        kind: BindingKind::Let,
-                        recursive,
-                        variable,
-                        annotation: Some(annotation.clone()),
-                        value,
-                    });
+                        match &annotation {
+                            Some(a) => last_scope.insert(variable.plain_ref().clone(), a.clone()),
+                            None => panic!("unannotated recursive binding {}", variable.plain_ref())
+                        };
 
-                    Some(None)
+                        let value = self.type_expression(value);
+
+                        self.const_state.as_mut().expect("const method called at runtime").scopes.pop();
+
+                        value
+                    } else {
+                        self.type_expression(value)
+                    };
+                
+                let type_ = value.type_.clone().expect("value should have been typed");
+
+                if let Some(a) = &annotation {
+                    assert!(type_.data.is_subtype_of(&a.data, self));
                 }
-                None => {
-                    let value = self.type_expression(value);
-                    let type_ = value.type_.clone().expect("value should have been typed");
 
-                    self.const_state
-                        .as_mut()
-                        .expect("const method called at runtime")
-                        .scopes
-                        .last_mut()
-                        .expect("current scope should exist")
-                        .insert(variable.plain_ref().clone(), *type_);
+                self.const_state
+                    .as_mut()
+                    .expect("const method called at runtime")
+                    .scopes
+                    .last_mut()
+                    .expect("current scope should exist")
+                    .insert(variable.plain_ref().clone(), *type_);
 
-                    typed_statements.push(Statement::Binding {
-                        kind: BindingKind::Let,
-                        recursive,
-                        variable,
-                        annotation: None,
-                        value,
-                    });
+                typed_statements.push(Statement::Binding {
+                    kind: BindingKind::Let,
+                    recursive,
+                    variable,
+                    annotation,
+                    value,
+                });
 
-                    Some(None)
-                }
+                Some(None)
             },
 
-            Statement::Binding { // TODO: add recursion here
-                kind: BindingKind::Const, recursive, variable, annotation, value,
-            } => match annotation {
-                Some(annotation) => {
-                    let annotation = self.evaluate(annotation, None);
-                    let value = self.evaluate(value, Some(variable.to_string()));
-                    // type check if the programmer added an annotation
-                    let value = self.type_expression(value);
+            Statement::Binding { kind: BindingKind::Const, recursive, variable, annotation, value, } => {
+                if recursive {
+                    let id = self.new_thunk(variable.plain_ref().clone());
+                    let mut value = self.evaluate(value);
 
-                    assert!(
-                        value.type_.as_ref().expect("value should have been typed").data.is_subtype_of(&annotation.data, self),
-                        "type error: {} is not a subtype of {}",
-                        value.type_.expect("value should have been typed").data,
-                        annotation.data
-                    );
+                    annotation.map(|annotation| {
+                        let annotation = self.evaluate(annotation);
+                        // type check if the programmer added an annotation
+                        value = self.type_expression(value.clone());
+
+                        assert!(
+                            value.type_.as_ref().expect("value should have been typed").data.is_subtype_of(&annotation.data, self),
+                            "type error: {} is not a subtype of {}",
+                            value.type_.as_ref().expect("value should have been typed").data,
+                            annotation.data
+                        );
+                    });
+
+                    self.thunks[id] = Thunk::Value(value);
+                } else {
+                    let mut value = self.evaluate(value);
+
+                    annotation.map(|annotation| {
+                        let annotation = self.evaluate(annotation);
+                        // type check if the programmer added an annotation
+                        value = self.type_expression(value.clone());
+
+                        assert!(
+                            value.type_.as_ref().expect("value should have been typed").data.is_subtype_of(&annotation.data, self),
+                            "type error: {} is not a subtype of {}",
+                            value.type_.as_ref().expect("value should have been typed").data,
+                            annotation.data
+                        );
+                    });
 
                     self.scopes
                         .last_mut()
                         .expect("current scope should exist")
                         .insert(variable.plain_ref().clone(), value.clone());
-
-                    None
                 }
-                None => {
-                    let value = self.evaluate(value, Some(variable.to_string()));
-                    // note: const value should not be typed
-
-                    self.scopes
-                        .last_mut()
-                        .expect("current scope should exist")
-                        .insert(variable.plain_ref().clone(), value.clone());
-
-                    None
-                }
+            
+                None
             },
         }
     }
@@ -754,11 +739,7 @@ impl ExpressionData {
                         .data
                         .is_type(rt)
             },
-            ED::Thunk(id) =>
-                match rt.thunks[*id].kind {
-                    ThunkKind::Function => false,
-                    ThunkKind::Type => true,
-                }
+            ED::Thunk(id) => todo!("thunk is type"),
         }
     }
 }
