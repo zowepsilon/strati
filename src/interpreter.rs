@@ -74,7 +74,6 @@ impl Runtime {
                     .map(|name| (name.clone(), self.get_raw_variable(name)))
                     .collect();
 
-
                 let mut return_type = *return_type.unwrap_or_else(|| Box::new(ED::unit().untyped()));
                 if self.const_state.is_some() {
                     args =
@@ -135,6 +134,13 @@ impl Runtime {
                 },
                 _ => panic!("type error: expected closure value"),
             },
+            ED::Closure { value, context } => {
+                self.scopes.push(context);
+                let value = self.evaluate(*value);
+                self.scopes.pop();
+
+                value
+            }
             ED::Block { statements, flatten: _ } => {
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
@@ -172,13 +178,6 @@ impl Runtime {
                 // TODO: equality
                 Expression::unit_typed()
             }
-            ED::SumType(left, right) => {
-                let left = self.evaluate(*left);
-                let right = self.evaluate(*right);
-                
-                // TODO: sum type evaluation
-                Expression::unit_typed()
-            }
             ED::FunType { args, return_type } => {
                 if self.const_state.is_some() {
                     let args = args.into_iter().map(|arg| self.evaluate(arg)).collect();
@@ -198,6 +197,34 @@ impl Runtime {
                 }
             }
             ED::Thunk(id) => self.get_thunk(id),
+            ED::SumType(left, right) => {
+                if self.const_state.is_some() {
+                    match (left.data, right.data) {
+                        (ED::Constructor {name: name1, data: data1}, ED::Constructor {name: name2, data: data2}) => {
+                            ED::SumTypeValue([
+                                (name1.map_or_else(String::new, Ident::plain), data1.into_iter().map(|t| self.new_closure(t)).collect()),
+                                (name2.map_or_else(String::new, Ident::plain), data2.into_iter().map(|t| self.new_closure(t)).collect()),
+                            ].into()).untyped()
+                        },
+                        | (ED::Constructor { name, data }, ED::SumTypeValue(mut variants))
+                        | (ED::SumTypeValue(mut variants), ED::Constructor { name, data }) => {
+                            variants.insert(name.map_or_else(String::new, Ident::plain), data.into_iter().map(|t| self.new_closure(t)).collect());
+
+                            ED::SumTypeValue(variants).untyped()
+                        }
+
+                        (ED::SumTypeValue(mut lvariants), ED::SumTypeValue(rvariants)) => {
+                            lvariants.extend(rvariants.into_iter());
+
+                            ED::SumTypeValue(lvariants).untyped()
+                        },
+                        (l, r) => panic!("only constructor types may be summed, got {l} and {r}")
+                    }
+
+                } else {
+                    panic!("sum type {} cannot be evaluated at runtime", ED::SumType(left, right))
+                }
+            }
             ED::Const(inner) => {
                 if self.const_state.is_some() {
                     self.evaluate(*inner)
@@ -219,7 +246,8 @@ impl Runtime {
             | ED::BuiltinInt
             | ED::BuiltinType
             | ED::BuiltinQuote
-            | ED::BuiltinString => {
+            | ED::BuiltinString
+            | ED::SumTypeValue(_) => {
                 if self.const_state.is_some() {
                     expr
                 } else {
@@ -255,7 +283,7 @@ impl Runtime {
                 annotation: _,
                 value,
             } => {
-                let id = self.new_thunk(variable.plain_ref().clone());
+                let id = self.new_rec(variable.plain_ref().clone());
                 let value = self.evaluate(value);
 
                 self.thunks[id] = Thunk::Value(value);
@@ -287,13 +315,20 @@ impl Runtime {
             .clone()
     }
     
-    pub fn new_thunk(&mut self, name: String) -> usize {
-        let id = self.thunks.len();
-        self.thunks.push(Thunk::Empty);
+    pub fn new_rec(&mut self, name: String) -> usize {
+        let id = self.new_thunk();
+
         self.scopes
             .last_mut()
             .expect("current scope should exist")
             .insert(name, ExpressionData::Thunk(id).untyped());
+        id
+    }
+
+    fn new_thunk(&mut self) -> usize {
+        let id = self.thunks.len();
+        self.thunks.push(Thunk::Empty);
+
         id
     }
 
@@ -304,6 +339,16 @@ impl Runtime {
         }
     }
 
+    fn new_closure(&self, expr: Expression) -> Expression {
+        Expression {
+            type_: expr.type_.clone(),
+            data: ExpressionData::Closure {
+                value: Box::new(expr),
+                context: self.scopes.last().expect("current scope should exist").clone()
+            }
+        }
+    }
+ 
     pub fn inherit_scope(&mut self) {
         self.scopes.push(self.scopes.last().cloned().unwrap_or_default());
     }
@@ -312,7 +357,6 @@ impl Runtime {
 impl Program {
     pub fn interpret(self) -> Expression {
         use ExpressionData as ED;
-
 
         let mut meta_rt = Runtime {
             scopes: vec![HashMap::from([
@@ -403,6 +447,19 @@ pub fn find_unbound_variables<'a>(
 
             found
         }
+        ED::SumTypeValue(variants) => {
+            let mut found = HashSet::new();
+            
+            for v in variants.values() {
+                for field in v {
+                    let subfound = find_unbound_variables(field, bound.clone());
+
+                    found.extend(subfound.into_iter());
+                }
+            }
+
+            found
+        }
         | ED::Add(left, right)
         | ED::Equal(left, right)
         | ED::SumType(left, right) => {
@@ -434,7 +491,8 @@ pub fn find_unbound_variables<'a>(
             }
 
             find_unbound_variables(body, subbound)
-        }
+        },
+        ED::Closure { value, context: _ } => find_unbound_variables(value, bound),
         ED::Block { statements, flatten: _ } => {
             let mut subbound = bound.clone();
             let mut found = HashSet::new();
@@ -520,6 +578,19 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
 
             found
         }
+        ED::SumTypeValue(variants) => {
+            let mut found = HashSet::new();
+            
+            for v in variants.values() {
+                for field in v {
+                    let subfound = unbound_in_quote(field, bound.clone());
+
+                    found.extend(subfound.into_iter());
+                }
+            }
+
+            found
+        }
         | ED::Add(left, right)
         | ED::Equal(left, right)
         | ED::SumType(left, right) => {
@@ -597,6 +668,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
 
             found
         }
+        ED::Closure { value, context: _ } => unbound_in_quote(value, bound),
         ED::Const(inner) => unbound_in_quote(inner, bound),
         ED::Quote(statements) => {
             let mut subbound = bound.clone();

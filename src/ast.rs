@@ -49,6 +49,11 @@ pub enum ExpressionData {
     },
     SumType(Box<Expression>, Box<Expression>),
     // internal, unparsable expressions
+    Closure {
+        value: Box<Expression>,
+        context: HashMap<String, Expression>
+    },
+    SumTypeValue(HashMap<String, Vec<Expression>>), // .A(Int) | .B | .C(String, String) ==> { "A": [Int], "B": [], "C": [String, String] }
     BuiltinInt,
     BuiltinString,
     BuiltinType,
@@ -184,6 +189,19 @@ impl std::fmt::Display for ExpressionData {
 
                 Ok(())
             }
+            ED::Closure { value, context } => {
+                if !context.is_empty() {
+                    write!(f, " [")?;
+                    for (name, value) in context {
+                        write!(f, "{name}: {:indent$}", value.data)?;
+                    }
+                    write!(f, "]")?;
+                }
+
+                write!(f, " {:indent$}", value.data)?;
+
+                Ok(())
+            }
             ED::Call { func, args } => {
                 write!(f, "{:indent$}(", func.data)?;
 
@@ -249,6 +267,17 @@ impl std::fmt::Display for ExpressionData {
             ED::SumType(left, right) => write!(f, "{} | {}", left.data, right.data),
             ED::Add(left, right) => write!(f, "{} + {}", left.data, right.data),
             ED::Thunk(id) => write!(f, "$thunk({id})"),
+            ED::SumTypeValue(variants) => {
+                let out = variants.iter().map(|(name, types)|
+                    format!(".{name}({})", 
+                        types.iter().map(|t|
+                            format!("{}", t.data)
+                        ).collect::<Vec<_>>().join(", ")
+                    )
+                ).collect::<Vec<_>>().join(" | ");
+
+                write!(f, "{out}")
+            }
             ED::BuiltinInt => write!(f, "$Int"),
             ED::BuiltinString => write!(f, "$String"),
             ED::BuiltinType => write!(f, "$Type"),

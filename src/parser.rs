@@ -136,7 +136,7 @@ impl Parser {
             (
                 TokenData::Const,
                 Some(Token {
-                    data: TokenData::Identifier(_) | TokenData::Dollar,
+                    data: TokenData::Identifier(_) | TokenData::Dollar | TokenData::Rec,
                     ..
                 }),
             ) => self.let_statement(BindingKind::Const),

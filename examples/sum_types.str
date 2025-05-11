@@ -1,0 +1,20 @@
+const assert_is = fun (T: Type) {
+    fun (x: T) {}
+}
+
+const rec BinaryTree = .Leaf | .Node(BinaryTree, BinaryTree)
+
+//      .
+//     / \
+//       .
+//      / \
+//     .   
+//    / \
+assert_is(BinaryTree)(.Node(.Leaf, .Node(.Node(.Leaf, .Leaf), .Leaf)))
+
+const rec List: Fun(Type) -> Type = fun(T: Type) -> Type {
+    .Nil | .Cons(T, List(T))
+}
+
+assert_is(List(Int))(.Cons(42, .Cons(69, .Nil)))
+

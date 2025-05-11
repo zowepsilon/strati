@@ -94,15 +94,6 @@ impl Runtime {
                     type_: Some(Box::new(ED::unit().untyped()))
                 }
             },
-            ED::SumType(left, right) => {
-                let left = self.type_expression(*left);
-                let right = self.type_expression(*right);
-
-                Expression {
-                    data: ED::SumType(Box::new(left), Box::new(right)),
-                    type_: Some(Box::new(ED::unit().untyped()))
-                }
-            }
             ED::Fun {
                 args,
                 return_type,
@@ -285,7 +276,6 @@ impl Runtime {
                 });
 
                 self.type_expression(inner)
-
             }
             ED::Quote(inner) => {
                 Expression {
@@ -293,6 +283,7 @@ impl Runtime {
                     type_: Some(Box::new(ED::BuiltinQuote.untyped())),
                 }
             },
+            ED::Closure{..} => unreachable!("closure should never occur at this stage"),
             ED::Thunk(_) => unreachable!("thunk should never occur at this stage"),
             ED::Splice(name) => panic!("type error: cannot type splice ${name}"),
             data @
@@ -300,7 +291,9 @@ impl Runtime {
             | ED::BuiltinType
             | ED::BuiltinQuote
             | ED::BuiltinString
-            | ED::FunType { .. } ) => Expression {
+            | ED::FunType { .. }
+            | ED::SumType(_, _)
+            | ED::SumTypeValue(_)) => Expression {
                 data,
                 type_: Some(Box::new(ED::BuiltinType.untyped())),
             },
@@ -421,7 +414,7 @@ impl Runtime {
 
             Statement::Binding { kind: BindingKind::Const, recursive, variable, annotation, value, } => {
                 if recursive {
-                    let id = self.new_thunk(variable.plain_ref().clone());
+                    let id = self.new_rec(variable.plain_ref().clone());
                     let mut value = self.evaluate(value);
 
                     annotation.map(|annotation| {
@@ -512,6 +505,21 @@ impl Runtime {
                     }
                 }
             },
+
+            ED::SumTypeValue(variants) => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::SumTypeValue(
+                        variants
+                            .into_iter()
+                            .map(|(name, types)| (
+                                name,
+                                types.into_iter().map(|ty| self.interpolate_expression(ty)).collect()
+                            ))
+                            .collect()
+                    )
+                }
+            }
             ED::Add(left, right) => {
                 Expression {
                     type_: expr.type_,
@@ -550,6 +558,15 @@ impl Runtime {
                     }
                 }
             },
+            ED::Closure { value, context } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Closure {
+                        value: Box::new(self.interpolate_expression(*value)),
+                        context,
+                    }
+                }
+            }
             ED::Call { func, args } => {
                 Expression {
                     type_: expr.type_,
@@ -615,6 +632,8 @@ impl Runtime {
             | ExpressionData::StringLiteral(_) => Some(expr),
             | ExpressionData::Const(_) 
             | ExpressionData::FunType { .. } 
+            | ExpressionData::SumType(_, _)
+            | ExpressionData::SumTypeValue(_)
             | ExpressionData::Splice(_)
             | ExpressionData::BuiltinInt 
             | ExpressionData::BuiltinString 
@@ -647,12 +666,6 @@ impl Runtime {
                     data: ExpressionData::Equal(Box::new(self.escape(*left)?), Box::new(self.escape(*right)?))
                 })
             }
-            ExpressionData::SumType(left, right) => {
-                Some(Expression {
-                    type_: expr.type_,
-                    data: ExpressionData::SumType(Box::new(self.escape(*left)?), Box::new(self.escape(*right)?))
-                })
-            }
             ExpressionData::Fun { body, context, args, return_type } => {
                 Some(Expression {
                     type_: expr.type_,
@@ -669,6 +682,23 @@ impl Runtime {
                         },
                         args,
                         return_type,
+                    }
+                })
+            }
+            ExpressionData::Closure { value, context } => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Closure {
+                        value: Box::new(self.escape(*value)?),
+                        context: {
+                            let mut escaped = HashMap::with_capacity(context.len());
+
+                            for (key, value) in context {
+                                escaped.insert(key, self.escape(value)?);
+                            }
+
+                            escaped
+                        },
                     }
                 })
             }
@@ -730,56 +760,40 @@ impl Runtime {
 }
 
 impl ExpressionData {
-    fn is_subtype_of(&self, other: &ExpressionData, rt: &Runtime) -> bool {
+    fn is_subtype_of(&self, other: &ExpressionData, rt: &mut Runtime) -> bool {
         use ExpressionData as ED;
 
         match (self, other) {
-            | (ED::Identifier(_), _)
-            | (_, ED::Identifier(_))
-            | (ED::Call { .. }, _)
-            | (_, ED::Call { .. })
-            | (ED::Block { .. }, _)
-            | (_, ED::Block { .. })
-            | (ED::Const(_), _)
-            | (_, ED::Const(_)) => panic!("unevaluated expression while checking subtyping"),
-            | (ED::IntLiteral(_), _)
-            | (_, ED::IntLiteral(_))
-            | (ED::StringLiteral(_), _)
-            | (_, ED::StringLiteral(_))
-            | (ED::Quote(_), _)
-            | (_, ED::Quote(_))
-            | (ED::BuiltinFunction { .. }, _)
-            | (_, ED::BuiltinFunction { .. })
-            | (ED::Fun { .. }, _)
-            | (_, ED::Fun { .. }) => panic!("type error: not a type"),
+            (ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Closure{..}
+            | ED::Splice(_) | ED::Equal(_, _) | ED::Add(_, _) | ED::SumType(_, _) | ED::Const(_), _)
+                => rt.evaluate(self.clone().untyped()).data.is_subtype_of(other, rt),
+
+            (_, ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Closure{..}
+            | ED::Splice(_) | ED::Equal(_, _) | ED::Add(_, _) | ED::SumType(_, _) | ED::Const(_))
+                => self.is_subtype_of(&rt.evaluate(other.clone().untyped()).data, rt),
+
+            | (ED::IntLiteral(_), _) | (_, ED::IntLiteral(_))
+            | (ED::StringLiteral(_), _) | (_, ED::StringLiteral(_))
+            | (ED::Quote(_), _) | (_, ED::Quote(_))
+            | (ED::BuiltinFunction { .. }, _) | (_, ED::BuiltinFunction { .. })
+            | (ED::Fun { .. }, _) | (_, ED::Fun { .. }) => panic!("type error: not a type"),
+
+            | (ED::BuiltinInt, ED::BuiltinInt)
+            | (ED::BuiltinString, ED::BuiltinString)
+            | (ED::BuiltinQuote, ED::BuiltinQuote) => true,
             (_, ED::BuiltinType) if self.is_type(rt) => true,
-            (
-                ED::Constructor {
-                    name: self_name,
-                    data: self_data,
-                },
-                ED::Constructor {
-                    name: other_name,
-                    data: other_data,
-                },
-            ) => {
+            (ED::Constructor { name: self_name, data: self_data, },
+             ED::Constructor { name: other_name, data: other_data }) => {
                 self_name == other_name
                     && self_data.len() == other_data.len()
                     && iter::zip(self_data, other_data).all(|(self_field, other_field)| {
                         // constructors are covariant w.r.t their fields
                         self_field.data.is_subtype_of(&other_field.data, rt)
                     })
-            }
-            (
-                ED::FunType {
-                    args: self_args,
-                    return_type: self_ret,
-                },
-                ED::FunType {
-                    args: other_args,
-                    return_type: other_ret,
-                },
-            ) => {
+            },
+
+            (ED::FunType { args: self_args, return_type: self_ret },
+             ED::FunType { args: other_args, return_type: other_ret }) => {
                 self_args.len() == other_args.len()
                 && iter::zip(self_args, other_args).all(|(self_arg, other_arg)| {
                     // functions are contravariant w.r.t their arguments
@@ -789,14 +803,43 @@ impl ExpressionData {
                 && self_ret.as_ref().expect("self should have return type").data
                     .is_subtype_of(&other_ret.as_ref().expect("self should have return type").data, rt)
             }
-            | (ED::BuiltinInt, ED::BuiltinInt)
-            | (ED::BuiltinString, ED::BuiltinString)
-            | (ED::BuiltinQuote, ED::BuiltinQuote) => true,
-            _ => false,
+
+            (ED::SumTypeValue(variants1), ED::SumTypeValue(variants2)) => {
+                variants1.iter().all( |(name, types1)| {
+                    variants2.get(name).is_some_and( |types2|
+                        iter::zip(types1, types2).all(|(t1, t2)| t1.data.is_subtype_of(&t2.data, rt))
+                    )
+                })
+            }
+
+            (ED::Constructor { name, data }, ED::SumTypeValue(variants)) => {
+                let name = match name {
+                    None => "",
+                    Some(n) => n.plain_ref(),
+                };
+
+                variants.get(name).is_some_and( |types|
+                    iter::zip(data, types).all(|(t1, t2)| t1.data.is_subtype_of(&t2.data, rt))
+                )
+            }
+            
+            (ED::SumTypeValue(variants), ED::Constructor { name: name2, data: data2 }) =>
+                variants.len() == 1
+                && variants.iter().next().is_some_and(|(name1, data1)| {
+                    (match name2 {
+                        None => name1 == "",
+                        Some(name2) => name1 == name2.plain_ref(),
+                    }) && iter::zip(data1, data2).all(|(t1, t2)| t1.data.is_subtype_of(&t2.data, rt))
+               })
+            ,
+            (ED::BuiltinType | ED::Thunk(_) | ED::Constructor{..} | ED::FunType{..} | ED::SumTypeValue(_)
+             | ED::BuiltinInt | ED::BuiltinString | ED::BuiltinQuote, _)
+                => false
+
         }
     }
 
-    pub fn is_type(&self, rt: &Runtime) -> bool {
+    pub fn is_type(&self, rt: &mut Runtime) -> bool {
         use ExpressionData as ED;
 
         match self {
@@ -807,9 +850,10 @@ impl ExpressionData {
             | ED::Splice(_)
             | ED::Add(_, _)
             | ED::SumType(_, _)
-            | ED::Equal(_, _) => {
-                panic!("unevaluated expression while checking subtyping")
-            }
+            | ED::Equal(_, _)
+            | ED::Closure{..}
+            | ED::Thunk(_) => 
+                rt.evaluate(self.clone().untyped()).data.is_type(rt),
             | ED::IntLiteral(_)
             | ED::StringLiteral(_)
             | ED::BuiltinFunction { .. }
@@ -833,7 +877,7 @@ impl ExpressionData {
                         .data
                         .is_type(rt)
             },
-            ED::Thunk(id) => todo!("thunk is type"),
+            ED::SumTypeValue(_) => true,
         }
     }
 }
