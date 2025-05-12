@@ -56,10 +56,10 @@ impl Runtime {
                 if self.const_state.is_some() {
                     args =
                         args.into_iter()
-                            .map(|(name, type_)| (name, self.evaluate(type_)))
+                            .map(|(name, type_)| (name, self.new_closure(type_)))
                             .collect();
 
-                    return_type = self.evaluate(return_type);
+                    return_type = self.new_closure(return_type);
                 }
 
                 Expression {
