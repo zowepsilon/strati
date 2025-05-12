@@ -66,7 +66,7 @@ pub enum ExpressionData {
     Thunk(usize),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub data: ExpressionData,
     pub type_: Option<Box<Expression>>,
@@ -128,6 +128,12 @@ impl Expression {
             data: ExpressionData::unit(),
             type_: Some(Box::new(ExpressionData::unit().untyped())),
         }
+    }
+}
+
+impl std::cmp::PartialEq for Expression {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
     }
 }
 

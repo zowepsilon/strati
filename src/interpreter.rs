@@ -153,8 +153,13 @@ impl Runtime {
                 let left = self.evaluate(*left);
                 let right = self.evaluate(*right);
                 
-                // TODO: equality
-                Expression::unit_typed()
+                let name = if left == right { "True" } else { "False" };
+                let name = Some(Ident::Plain(name.to_string()));
+
+                Expression {
+                    type_: Some(Box::new(ED::Identifier("Bool".to_string()).untyped())),
+                    data: ED::Constructor { name, data: vec![] }
+                }
             }
             ED::FunType { args, return_type } => {
                 if self.const_state.is_some() {
@@ -367,6 +372,10 @@ impl Program {
                 ("Int"   .to_string(), ED::BuiltinInt   .untyped()),
                 ("String".to_string(), ED::BuiltinString.untyped()),
                 ("Type"  .to_string(), ED::BuiltinType  .untyped()),
+                ("Bool"  .to_string(), ED::SumTypeValue([
+                    ("True".to_string(), vec![]),
+                    ("False".to_string(), vec![]),
+                ].into()).untyped()),
                 ("dump"  .to_string(), ED::BuiltinFunction {
                     name: "dump",
                     runtime_available: false,
