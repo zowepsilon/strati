@@ -190,7 +190,7 @@ impl std::fmt::Display for ExpressionData {
                 Ok(())
             }
             ED::Closure { value, context } => {
-                if !context.is_empty() {
+                if false && !context.is_empty() {
                     write!(f, " [")?;
                     for (name, value) in context {
                         write!(f, "{name}: {:indent$}", value.data)?;

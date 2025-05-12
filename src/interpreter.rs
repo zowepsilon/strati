@@ -24,28 +24,6 @@ pub struct Runtime {
 
 pub const TRACE: bool = false;
 
-impl Runtime {
-    #[expect(unused)] // TODO: remove this
-    fn add_builtin_function(
-        &mut self,
-        name: &'static str,
-        handler: fn(&mut Runtime, Vec<Expression>) -> Expression,
-        type_: Expression,
-        runtime_available: bool,
-    ) {
-        self.scopes
-            .last_mut()
-            .expect("current scope should exist")
-            .insert(
-                name.to_string(),
-                Expression {
-                    data: ExpressionData::BuiltinFunction { name, handler, runtime_available },
-                    type_: Some(Box::new(type_)),
-                },
-            );
-    }
-}
-
 // runtime/common methods
 impl Runtime {
     pub fn evaluate(&mut self, expr: Expression) -> Expression {
@@ -198,9 +176,23 @@ impl Runtime {
             }
             ED::Thunk(id) => self.get_thunk(id),
             ED::SumType(left, right) => {
+
                 if self.const_state.is_some() {
+                    let mut left = *left;
+                    let mut right = *right;
+
+                    if let ED::SumType(_, _) = left.data {
+                        left = self.evaluate(left);
+                    }
+
+                    if let ED::SumType(_, _) = right.data {
+                        right = self.evaluate(right);
+                    }
+
                     match (left.data, right.data) {
                         (ED::Constructor {name: name1, data: data1}, ED::Constructor {name: name2, data: data2}) => {
+                            assert_ne!(name1, name2, "tried adding non-disjoint constructor types");
+
                             ED::SumTypeValue([
                                 (name1.map_or_else(String::new, Ident::plain), data1.into_iter().map(|t| self.new_closure(t)).collect()),
                                 (name2.map_or_else(String::new, Ident::plain), data2.into_iter().map(|t| self.new_closure(t)).collect()),
@@ -208,12 +200,24 @@ impl Runtime {
                         },
                         | (ED::Constructor { name, data }, ED::SumTypeValue(mut variants))
                         | (ED::SumTypeValue(mut variants), ED::Constructor { name, data }) => {
-                            variants.insert(name.map_or_else(String::new, Ident::plain), data.into_iter().map(|t| self.new_closure(t)).collect());
+                            let name = name.map_or_else(String::new, Ident::plain);
+
+                            assert!(!variants.contains_key(&name), 
+                                "tried adding non-disjoint constructor types {} and {}", 
+                                ED::Constructor { name: Some(Ident::Plain(name)), data }, ED::SumTypeValue(variants)
+                            );
+
+                            variants.insert(name, data.into_iter().map(|t| self.new_closure(t)).collect());
 
                             ED::SumTypeValue(variants).untyped()
                         }
 
                         (ED::SumTypeValue(mut lvariants), ED::SumTypeValue(rvariants)) => {
+                            assert!(!lvariants.keys().any(|name| rvariants.contains_key(name)),
+                                "tried adding non-disjoint constructor types {} and {}", 
+                                ED::SumTypeValue(lvariants), ED::SumTypeValue(rvariants)
+                            );
+
                             lvariants.extend(rvariants.into_iter());
 
                             ED::SumTypeValue(lvariants).untyped()
