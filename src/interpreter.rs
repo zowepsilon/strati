@@ -3,14 +3,13 @@ use std::{
     iter,
 };
 
-use crate::ast::{Expression, ExpressionData, Ident, Program, Statement};
+use crate::ast::{Expression, ExpressionData, Ident, Pattern, Program, Statement};
 use crate::stage1::ConstState;
-
 
 #[derive(Debug, Clone)]
 pub enum Thunk {
     Empty,
-    Value(Expression)
+    Value(Expression),
 }
 
 #[derive(Debug)]
@@ -27,14 +26,14 @@ pub const TRACE: bool = false;
 // runtime/common methods
 impl Runtime {
     pub fn evaluate(&mut self, expr: Expression) -> Expression {
-        if TRACE { eprintln!("evaluate: {}", expr.data) };
+        if TRACE {
+            eprintln!("evaluate: {}", expr.data)
+        };
 
         use ExpressionData as ED;
 
         match expr.data {
-            ED::BuiltinFunction { .. }
-            | ED::IntLiteral(_)
-            | ED::StringLiteral(_) => expr,
+            ED::BuiltinFunction { .. } | ED::IntLiteral(_) | ED::StringLiteral(_) => expr,
             ED::Identifier(var) => self.get_variable(&var),
             ED::Constructor { name, data } => {
                 let data = data.into_iter().map(|e| self.evaluate(e)).collect();
@@ -44,20 +43,28 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ED::Fun { mut args, return_type, body, context: _, } => {
-                let to_bind =
-                    find_unbound_variables(&body, args.iter().map(|(name, _)| name.plain_ref()).collect());
+            ED::Fun {
+                mut args,
+                return_type,
+                body,
+                context: _,
+            } => {
+                let to_bind = find_unbound_variables(
+                    &body,
+                    args.iter().map(|(name, _)| name.plain_ref()).collect(),
+                );
                 let context = to_bind
                     .into_iter()
                     .map(|name| (name.clone(), self.get_raw_variable(name)))
                     .collect();
 
-                let mut return_type = *return_type.unwrap_or_else(|| Box::new(ED::unit().untyped()));
+                let mut return_type =
+                    *return_type.unwrap_or_else(|| Box::new(ED::unit().untyped()));
                 if self.const_state.is_some() {
-                    args =
-                        args.into_iter()
-                            .map(|(name, type_)| (name, self.new_closure(type_)))
-                            .collect();
+                    args = args
+                        .into_iter()
+                        .map(|(name, type_)| (name, self.new_closure(type_)))
+                        .collect();
 
                     return_type = self.new_closure(return_type);
                 }
@@ -72,14 +79,21 @@ impl Runtime {
                     type_: expr.type_,
                 }
             }
-            ED::Call { func, args: parameters } => match self.evaluate(*func).data {
+            ED::Call {
+                func,
+                args: parameters,
+            } => match self.evaluate(*func).data {
                 ED::Fun {
                     args,
                     return_type: _,
                     body,
                     context,
                 } => {
-                    let ED::Block { statements, flatten: _ } = body.data else {
+                    let ED::Block {
+                        statements,
+                        flatten: _,
+                    } = body.data
+                    else {
                         panic!("the parser guarantees that the function body is a block")
                     };
 
@@ -109,7 +123,7 @@ impl Runtime {
                         parameters.into_iter().map(|p| self.evaluate(p)).collect();
 
                     handler(self, parameters)
-                },
+                }
                 _ => panic!("type error: expected closure value"),
             },
             ED::Closure { value, context } => {
@@ -119,7 +133,10 @@ impl Runtime {
 
                 value
             }
-            ED::Block { statements, flatten: _ } => {
+            ED::Block {
+                statements,
+                flatten: _,
+            } => {
                 self.scopes
                     .push(self.scopes.last().cloned().unwrap_or_default());
 
@@ -142,8 +159,8 @@ impl Runtime {
                         let y = y.parse::<i64>().unwrap();
 
                         Expression {
-                            data: ED::IntLiteral((x+y).to_string()),
-                            type_: Some(Box::new(ED::BuiltinInt.untyped()))
+                            data: ED::IntLiteral((x + y).to_string()),
+                            type_: Some(Box::new(ED::BuiltinInt.untyped())),
                         }
                     }
                     (l, r) => panic!("tried adding {l} and {r}"),
@@ -152,14 +169,38 @@ impl Runtime {
             ED::Equal(left, right) => {
                 let left = self.evaluate(*left);
                 let right = self.evaluate(*right);
-                
+
                 let name = if left == right { "True" } else { "False" };
                 let name = Some(Ident::Plain(name.to_string()));
 
                 Expression {
                     type_: Some(Box::new(ED::Identifier("Bool".to_string()).untyped())),
-                    data: ED::Constructor { name, data: vec![] }
+                    data: ED::Constructor { name, data: vec![] },
                 }
+            }
+            ED::Match { value, branches } => {
+                self.inherit_scope();
+
+                let value = self.evaluate(*value);
+
+                let mut result = None;
+                for (pat, expr) in branches {
+                    match self.match_expr(pat, &value) {
+                        None => (),
+                        Some(bindings) => {
+                            self.scopes
+                                .last_mut()
+                                .expect("current scope should exist")
+                                .extend(bindings.into_iter());
+                            result = Some(self.evaluate(expr));
+                            break;
+                        }
+                    }
+                }
+
+                self.scopes.pop();
+
+                result.expect("unexhaustive match")
             }
             ED::FunType { args, return_type } => {
                 if self.const_state.is_some() {
@@ -169,19 +210,18 @@ impl Runtime {
                     let return_type = Some(Box::new(self.evaluate(*return_type)));
 
                     Expression {
-                        data: ExpressionData::FunType {
-                            args,
-                            return_type,
-                        },
+                        data: ExpressionData::FunType { args, return_type },
                         type_: expr.type_,
                     }
                 } else {
-                    panic!("fun type {} cannot be evaluated at runtime", ED::FunType{args, return_type})
+                    panic!(
+                        "fun type {} cannot be evaluated at runtime",
+                        ED::FunType { args, return_type }
+                    )
                 }
             }
             ED::Thunk(id) => self.get_thunk(id),
             ED::SumType(left, right) => {
-
                 if self.const_state.is_some() {
                     let mut left = *left;
                     let mut right = *right;
@@ -195,64 +235,106 @@ impl Runtime {
                     }
 
                     match (left.data, right.data) {
-                        (ED::Constructor {name: name1, data: data1}, ED::Constructor {name: name2, data: data2}) => {
+                        (
+                            ED::Constructor {
+                                name: name1,
+                                data: data1,
+                            },
+                            ED::Constructor {
+                                name: name2,
+                                data: data2,
+                            },
+                        ) => {
                             assert_ne!(name1, name2, "tried adding non-disjoint constructor types");
 
-                            ED::SumTypeValue([
-                                (name1.map_or_else(String::new, Ident::plain), data1.into_iter().map(|t| self.new_closure(t)).collect()),
-                                (name2.map_or_else(String::new, Ident::plain), data2.into_iter().map(|t| self.new_closure(t)).collect()),
-                            ].into()).untyped()
-                        },
-                        | (ED::Constructor { name, data }, ED::SumTypeValue(mut variants))
+                            ED::SumTypeValue(
+                                [
+                                    (
+                                        name1.map_or_else(String::new, Ident::plain),
+                                        data1.into_iter().map(|t| self.new_closure(t)).collect(),
+                                    ),
+                                    (
+                                        name2.map_or_else(String::new, Ident::plain),
+                                        data2.into_iter().map(|t| self.new_closure(t)).collect(),
+                                    ),
+                                ]
+                                .into(),
+                            )
+                            .untyped()
+                        }
+                        (ED::Constructor { name, data }, ED::SumTypeValue(mut variants))
                         | (ED::SumTypeValue(mut variants), ED::Constructor { name, data }) => {
                             let name = name.map_or_else(String::new, Ident::plain);
 
-                            assert!(!variants.contains_key(&name), 
-                                "tried adding non-disjoint constructor types {} and {}", 
-                                ED::Constructor { name: Some(Ident::Plain(name)), data }, ED::SumTypeValue(variants)
+                            assert!(
+                                !variants.contains_key(&name),
+                                "tried adding non-disjoint constructor types {} and {}",
+                                ED::Constructor {
+                                    name: Some(Ident::Plain(name)),
+                                    data
+                                },
+                                ED::SumTypeValue(variants)
                             );
 
-                            variants.insert(name, data.into_iter().map(|t| self.new_closure(t)).collect());
+                            variants.insert(
+                                name,
+                                data.into_iter().map(|t| self.new_closure(t)).collect(),
+                            );
 
                             ED::SumTypeValue(variants).untyped()
                         }
 
                         (ED::SumTypeValue(mut lvariants), ED::SumTypeValue(rvariants)) => {
-                            assert!(!lvariants.keys().any(|name| rvariants.contains_key(name)),
-                                "tried adding non-disjoint constructor types {} and {}", 
-                                ED::SumTypeValue(lvariants), ED::SumTypeValue(rvariants)
+                            assert!(
+                                !lvariants.keys().any(|name| rvariants.contains_key(name)),
+                                "tried adding non-disjoint constructor types {} and {}",
+                                ED::SumTypeValue(lvariants),
+                                ED::SumTypeValue(rvariants)
                             );
 
                             lvariants.extend(rvariants.into_iter());
 
                             ED::SumTypeValue(lvariants).untyped()
-                        },
-                        (l, r) => panic!("only constructor types may be summed, got {l} and {r}")
+                        }
+                        (l, r) => panic!("only constructor types may be summed, got {l} and {r}"),
                     }
-
                 } else {
-                    panic!("sum type {} cannot be evaluated at runtime", ED::SumType(left, right))
+                    panic!(
+                        "sum type {} cannot be evaluated at runtime",
+                        ED::SumType(left, right)
+                    )
                 }
             }
             ED::Const(inner) => {
                 if self.const_state.is_some() {
                     self.evaluate(*inner)
                 } else {
-                    panic!("const expression const {} cannot be evaluated at runtime", inner.data)
+                    panic!(
+                        "const expression const {} cannot be evaluated at runtime",
+                        inner.data
+                    )
                 }
-            },
+            }
             ED::Quote(inner) => {
                 if self.const_state.is_some() {
                     Expression {
-                        data: ED::Quote(inner.into_iter().map(|stmt| self.interpolate_statement(stmt)).collect()),
+                        data: ED::Quote(
+                            inner
+                                .into_iter()
+                                .map(|stmt| self.interpolate_statement(stmt))
+                                .collect(),
+                        ),
                         type_: expr.type_,
                     }
                 } else {
-                    panic!("quote expression {} cannot be evaluated at runtime", ExpressionData::Quote(inner))
+                    panic!(
+                        "quote expression {} cannot be evaluated at runtime",
+                        ExpressionData::Quote(inner)
+                    )
                 }
-            },
+            }
             ED::Splice(name) => panic!("cannot evaluate splice ${name}"),
-            | ED::BuiltinInt
+            ED::BuiltinInt
             | ED::BuiltinType
             | ED::BuiltinQuote
             | ED::BuiltinString
@@ -262,7 +344,71 @@ impl Runtime {
                 } else {
                     panic!("types cannot be evaluated at runtime")
                 }
-            },
+            }
+        }
+    }
+
+    fn match_expr(
+        &mut self,
+        pat: Pattern,
+        value: &Expression,
+    ) -> Option<HashMap<String, Expression>> {
+        use ExpressionData as ED;
+
+        match (pat, &value.data) {
+            (Pattern::Binding(name), _) => Some(HashMap::from([(name.plain(), value.clone())])),
+            (Pattern::IntLiteral(p), ED::IntLiteral(x)) => {
+                (p.parse::<i64>() == x.parse()).then(HashMap::new)
+            }
+            (Pattern::StringLiteral(p), ED::StringLiteral(x)) => (p == *x).then(HashMap::new),
+            (
+                Pattern::Constructor {
+                    name: pname,
+                    data: pdata,
+                },
+                ED::Constructor {
+                    name: vname,
+                    data: vdata,
+                },
+            ) => {
+                if pname != *vname {
+                    return None;
+                }
+
+                let mut bindings = HashMap::new();
+                for (subpat, subval) in iter::zip(pdata, vdata) {
+                    bindings.extend(self.match_expr(subpat, &subval)?.into_iter());
+                }
+
+                Some(bindings)
+            }
+            (
+                Pattern::FunType {
+                    args: pargs,
+                    return_type: pret,
+                },
+                ED::FunType {
+                    args: vargs,
+                    return_type: vret,
+                },
+            ) => {
+                let mut bindings = HashMap::new();
+
+                for (subpat, subval) in iter::zip(pargs, vargs) {
+                    bindings.extend(self.match_expr(subpat, &subval)?.into_iter());
+                }
+
+                match (pret, vret) {
+                    (None, None) => (),
+                    (Some(pret), Some(ref vret)) => {
+                        bindings.extend(self.match_expr(*pret, &vret)?.into_iter())
+                    }
+                    _ => return None,
+                }
+
+                Some(bindings)
+            }
+            _ => return None,
         }
     }
 
@@ -284,7 +430,7 @@ impl Runtime {
                     .insert(variable.plain(), value);
 
                 None
-            },
+            }
             Statement::Binding {
                 kind: _,
                 recursive: true,
@@ -317,13 +463,19 @@ impl Runtime {
             .last()
             .expect("current scope should exist")
             .get(var)
-            .unwrap_or_else(|| panic!(
-                "unknown variable {var} at {} time", 
-                if self.const_state.is_some() {"const"} else {"run"}
-            ))
+            .unwrap_or_else(|| {
+                panic!(
+                    "unknown variable {var} at {} time",
+                    if self.const_state.is_some() {
+                        "const"
+                    } else {
+                        "run"
+                    }
+                )
+            })
             .clone()
     }
-    
+
     pub fn new_rec(&mut self, name: String) -> usize {
         let id = self.new_thunk();
 
@@ -344,7 +496,7 @@ impl Runtime {
     fn get_thunk(&self, id: usize) -> Expression {
         match &self.thunks[id] {
             Thunk::Empty => panic!("trying to access a thunk while it is not evaluated yet"),
-            Thunk::Value(v) => v.clone()
+            Thunk::Value(v) => v.clone(),
         }
     }
 
@@ -353,13 +505,18 @@ impl Runtime {
             type_: expr.type_.clone(),
             data: ExpressionData::Closure {
                 value: Box::new(expr),
-                context: self.scopes.last().expect("current scope should exist").clone()
-            }
+                context: self
+                    .scopes
+                    .last()
+                    .expect("current scope should exist")
+                    .clone(),
+            },
         }
     }
- 
+
     pub fn inherit_scope(&mut self) {
-        self.scopes.push(self.scopes.last().cloned().unwrap_or_default());
+        self.scopes
+            .push(self.scopes.last().cloned().unwrap_or_default());
     }
 }
 
@@ -407,18 +564,20 @@ impl Program {
             thunks: Vec::new(),
         };
 
-
         let root = ED::Block {
             statements: self.root,
             flatten: false,
-        }.untyped();
+        }
+        .untyped();
 
         let root = meta_rt.type_expression(root);
 
-        if false { println!("{}", root.data); }
+        if false {
+            println!("{}", root.data);
+        }
 
         let mut rt = Runtime {
-            scopes: vec![ HashMap::new() ],
+            scopes: vec![HashMap::new()],
             const_state: None,
             thunks: Vec::new(),
         };
@@ -434,7 +593,7 @@ pub fn find_unbound_variables<'a>(
     use ExpressionData as ED;
 
     match &expr.data {
-        | ED::IntLiteral(_)
+        ED::IntLiteral(_)
         | ED::StringLiteral(_)
         | ED::BuiltinFunction { .. }
         | ED::Thunk(_)
@@ -462,7 +621,7 @@ pub fn find_unbound_variables<'a>(
         }
         ED::SumTypeValue(variants) => {
             let mut found = HashSet::new();
-            
+
             for v in variants.values() {
                 for field in v {
                     let subfound = find_unbound_variables(field, bound.clone());
@@ -473,9 +632,7 @@ pub fn find_unbound_variables<'a>(
 
             found
         }
-        | ED::Add(left, right)
-        | ED::Equal(left, right)
-        | ED::SumType(left, right) => {
+        ED::Add(left, right) | ED::Equal(left, right) | ED::SumType(left, right) => {
             let mut found = find_unbound_variables(left, bound.clone());
             found.extend(find_unbound_variables(right, bound).into_iter());
 
@@ -504,9 +661,23 @@ pub fn find_unbound_variables<'a>(
             }
 
             find_unbound_variables(body, subbound)
-        },
+        }
+        ED::Match { value, branches } => {
+            let mut found = find_unbound_variables(value, bound.clone());
+
+            for (p, v) in branches {
+                let mut subbound = bound.clone();
+                vars_of_pattern(&p, &mut subbound);
+                found.extend(find_unbound_variables(v, subbound));
+            }
+
+            found
+        }
         ED::Closure { value, context: _ } => find_unbound_variables(value, bound),
-        ED::Block { statements, flatten: _ } => {
+        ED::Block {
+            statements,
+            flatten: _,
+        } => {
             let mut subbound = bound.clone();
             let mut found = HashSet::new();
 
@@ -537,10 +708,7 @@ pub fn find_unbound_variables<'a>(
         }
         ED::Const(inner) => find_unbound_variables(inner, bound),
         ED::Quote(_) => unbound_in_quote(expr, bound),
-        ED::FunType {
-            args,
-            return_type,
-        } => {
+        ED::FunType { args, return_type } => {
             let mut found = HashSet::new();
 
             for field in args {
@@ -564,7 +732,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
     use ExpressionData as ED;
 
     match &expr.data {
-        | ED::IntLiteral(_)
+        ED::IntLiteral(_)
         | ED::StringLiteral(_)
         | ED::BuiltinFunction { .. }
         | ED::Thunk(_)
@@ -572,8 +740,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
         | ED::BuiltinString
         | ED::BuiltinQuote
         | ED::BuiltinType
-        | ED::Identifier(_)
-            => HashSet::new(),
+        | ED::Identifier(_) => HashSet::new(),
         ED::Splice(name) => {
             if bound.contains(&name) {
                 HashSet::new()
@@ -593,7 +760,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
         }
         ED::SumTypeValue(variants) => {
             let mut found = HashSet::new();
-            
+
             for v in variants.values() {
                 for field in v {
                     let subfound = unbound_in_quote(field, bound.clone());
@@ -604,9 +771,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
 
             found
         }
-        | ED::Add(left, right)
-        | ED::Equal(left, right)
-        | ED::SumType(left, right) => {
+        ED::Add(left, right) | ED::Equal(left, right) | ED::SumType(left, right) => {
             let mut found = unbound_in_quote(left, bound.clone());
             found.extend(unbound_in_quote(right, bound).into_iter());
 
@@ -632,7 +797,9 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
             for (name, ty) in args {
                 match name {
                     Ident::Plain(_) => (),
-                    Ident::Splice(name) => { subbound.insert(name); },
+                    Ident::Splice(name) => {
+                        subbound.insert(name);
+                    }
                 };
 
                 subbound.extend(unbound_in_quote(ty, subbound.clone()));
@@ -643,8 +810,14 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
             }
 
             unbound_in_quote(body, subbound)
+        },
+        ED::Match { .. } => {
+            todo!()
         }
-        ED::Block { statements, flatten: _ } => {
+        ED::Block {
+            statements,
+            flatten: _,
+        } => {
             let mut subbound = bound.clone();
             let mut found = HashSet::new();
 
@@ -659,7 +832,9 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                     } => {
                         match variable {
                             Ident::Plain(_) => (),
-                            Ident::Splice(name) => { subbound.insert(&name); },
+                            Ident::Splice(name) => {
+                                subbound.insert(&name);
+                            }
                         };
 
                         if let Some(annotation) = annotation {
@@ -698,7 +873,9 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                     } => {
                         match variable {
                             Ident::Plain(_) => (),
-                            Ident::Splice(name) => { subbound.insert(&name); },
+                            Ident::Splice(name) => {
+                                subbound.insert(&name);
+                            }
                         };
 
                         if let Some(annotation) = annotation {
@@ -711,7 +888,6 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
                         }
 
                         found.extend(unbound_in_quote(value, value_scope));
-
                     }
                     Statement::Expression(value) => {
                         found.extend(unbound_in_quote(value, subbound.clone()));
@@ -721,10 +897,7 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
 
             found
         }
-        ED::FunType {
-            args,
-            return_type,
-        } => {
+        ED::FunType { args, return_type } => {
             let mut found = HashSet::new();
 
             for field in args {
@@ -741,5 +914,24 @@ fn unbound_in_quote<'a>(expr: &'a Expression, bound: HashSet<&'a String>) -> Has
             ));
             found
         }
+    }
+}
+
+fn vars_of_pattern<'a>(pat: &'a Pattern, bound: &mut HashSet<&'a String>) {
+    match pat {
+        Pattern::IntLiteral(_) => (),
+        Pattern::StringLiteral(_) => (),
+        Pattern::Binding(ident) => { bound.insert(ident.plain_ref()); },
+        Pattern::Constructor { name: _, data } => {
+            for x in data {
+                vars_of_pattern(x, bound);
+            }
+        },
+        Pattern::FunType { args, return_type } => {
+            return_type.as_ref().map(|r| vars_of_pattern(r, bound));
+            for a in args {
+                vars_of_pattern(a, bound);
+            }
+        },
     }
 }

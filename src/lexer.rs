@@ -29,6 +29,7 @@ pub enum TokenData {
     Const,
     Quote,
     Rec,
+    Match,
 
     // specials
     NewLine,
@@ -108,6 +109,7 @@ impl<'a> Lexer<'a> {
                         "const" => TokenData::Const,
                         "quote" => TokenData::Quote,
                         "rec" => TokenData::Rec,
+                        "match" => TokenData::Match,
                         _ => TokenData::Identifier(content),
                     },
                     pos: start_position,
@@ -237,10 +239,7 @@ impl<'a> Iterator for Lexer<'a> {
                 ),
                 '-' => two_char_token!(
                     '>', 
-                    {
-                        self.ok = false;
-                        return None;
-                    },
+                    self.number('-'),
                     self.token(ThinArrow)
                 ),
                 '/' => two_char_token! {
@@ -313,6 +312,7 @@ impl Display for TokenData {
             TD::Const => write!(f, "const"),
             TD::Quote => write!(f, "quote"),
             TD::Rec => write!(f, "rec"),
+            TD::Match => write!(f, "match"),
             TD::NewLine => writeln!(f),
             TD::ThinArrow => write!(f, " -> "),
             TD::Identifier(name) => write!(f, "{name} "),

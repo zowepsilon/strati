@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use crate::ast::{BindingKind, Expression, ExpressionData, Ident, Program, Statement};
+use crate::ast::{BindingKind, Expression, ExpressionData, Ident, Pattern, Program, Statement};
 use crate::lexer::{Token, TokenData};
 
 #[derive(Debug, Clone)]
@@ -233,6 +233,34 @@ impl Parser {
                     }
                     _ => None,
                 }
+            },
+            TokenData::Match => {
+                let _ = self.tokens.next();
+                
+                let value = Box::new(self.expression()?);
+
+                let TokenData::BraceBlock(inner) = self.tokens.next()?.data
+                    else { return None; };
+                
+                let mut inner = Parser::new(inner);
+
+                inner.newlines();
+
+                let branches = list!(inner,
+                    {   
+                        inner.newlines();
+                        let expr = inner.match_branch()?;
+                        inner.newlines();
+
+                        expr
+                    },
+                    sep: TokenData::Comma
+                );
+
+                inner.newlines();
+                inner.assert_empty()?;
+
+                Some(ExpressionData::Match { value, branches }.untyped())
             }
             _ => None,
         }?;
@@ -514,5 +542,136 @@ impl Parser {
         {
             self.tokens.next();
         }
+    }
+}
+
+// pattern syntax
+impl Parser {
+    fn match_branch(&mut self) -> Option<(Pattern, Expression)> {
+        if TRACE {
+            dbg!("match_branch", self.tokens.peek());
+        }
+        self.newlines();
+        let pattern = self.pattern()?;
+        self.newlines();
+        expect!(self, TokenData::ThinArrow)?;
+        self.newlines();
+
+        let expr = self.expression()?;
+
+        Some((pattern, expr))
+
+    }
+
+    fn pattern(&mut self) -> Option<Pattern> {
+        match &self.tokens.peek()?.data {
+            TokenData::Identifier(_) => {
+                let TokenData::Identifier(name) = self.tokens.next()?.data
+                    else { unreachable!("tokens was peeked successfully"); };
+
+                Some(Pattern::Binding(Ident::Plain(name)))
+            },
+            TokenData::Integer(_) => {
+                let TokenData::Integer(x) = self.tokens.next()?.data
+                    else { unreachable!() };
+                Some(Pattern::IntLiteral(x.clone()))
+            },
+            TokenData::String(_) => {
+                let TokenData::String(x) = self.tokens.next()?.data
+                    else { unreachable!() };
+                Some(Pattern::StringLiteral(x.clone()))
+            },
+            TokenData::Dollar => {
+                let _ = self.tokens.next();
+
+                let TokenData::Identifier(name) = self.tokens.next()?.data
+                    else { return None; };
+
+                Some(Pattern::Binding(Ident::Splice(name)))
+            },
+            TokenData::Dot => self.pattern_constructor(),
+            TokenData::FunType => self.pattern_fntype(),
+            _ => None
+        }
+    }
+
+    fn pattern_constructor(&mut self) -> Option<Pattern> {
+        expect!(self, TokenData::Dot)?;
+
+        let name = match self.tokens.peek() {
+            Some(Token {
+                data: TokenData::Identifier(_)
+                    | TokenData::Dollar,
+                ..
+            }) => Some(self.ident()?),
+            _ => None,
+        };
+
+        let data = match self.tokens.peek() {
+            Some(Token {
+                data: TokenData::ParenBlock(_),
+                ..
+            }) => {
+                let Some(Token {
+                    data: TokenData::ParenBlock(inner),
+                    ..
+                }) = self.tokens.next()
+                else {
+                    unreachable!("self.tokens was peeked successfully")
+                };
+
+                let mut inner = Parser::new(inner);
+
+                let ret = list!(inner,
+                    inner.pattern()?,
+                    sep: TokenData::Comma
+                );
+
+                inner.assert_empty()?;
+
+                ret
+            }
+            _ => Vec::new(),
+        };
+
+        Some(Pattern::Constructor { name, data })
+    }
+
+    fn pattern_fntype(&mut self) -> Option<Pattern> {
+        if TRACE {
+            dbg!("pattern_fntype", self.tokens.peek());
+        }
+
+        expect!(self, TokenData::FunType)?;
+
+        let Some(Token {
+            data: TokenData::ParenBlock(inner),
+            ..
+        }) = self.tokens.next()
+        else {
+            return None;
+        };
+
+        let mut inner = Parser::new(inner);
+
+        let args = list!(inner, {
+            inner.pattern()?
+        }, sep: TokenData::Comma);
+
+        inner.assert_empty()?;
+
+        let return_type = match self.tokens.peek() {
+            Some(Token {
+                data: TokenData::ThinArrow,
+                ..
+            }) => {
+                let _ = self.tokens.next();
+
+                Some(Box::new(self.pattern()?))
+            }
+            _ => None,
+        };
+
+        Some(Pattern::FunType { args, return_type })
     }
 }

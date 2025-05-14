@@ -36,11 +36,23 @@ primary =
     | block
     | expression, "(", list(expression), ")"
     | fun_expression
-    | funtype_expression
+    | funtype_expression(expression)
     | pipe_expression
-    | constructor
+    | constructor(expression)
     | "const", block
     | "quote", block
+    | "match", expression, "{", list(match_branch), "}"
+
+
+match_branch = pattern, "->", expression
+
+pattern = identifier
+        | constructor(pattern)
+        | funtype_expression(pattern)
+        | string
+        | integer
+        | splice
+    
 
 block = "{", statements, "}"
 statements = newline*, (statement, newline)*, statement, newline?
@@ -55,8 +67,8 @@ fun_expression = "fun", "(",
            list((identifier | splice), annotation), ")", 
            "->", expression, block_expression
 
-funtype_expression = "Fun", "(", list(expression), ")", "->", expression
+funtype_expression(X) = "Fun", "(", list(X), ")", "->", X
 
-constructor = ".", (identifier | splice)?, ("(", list(expression), ")")?
+constructor(X) = ".", (identifier | splice)?, ("(", list(X), ")")?
 
 program = statements

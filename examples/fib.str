@@ -1,6 +1,22 @@
-// TODO: actual fibonacci
-
-let rec f: Fun(Int) = fun(y: Int) {
-    dump(Int)(y)
-    f(y+1)
+let rec fib: Fun(Int) -> Int = fun(n: Int) -> Int {
+    match n {
+        0 -> 0,
+        1 -> 1,
+        n -> fib(n + -1) + fib(n + -2)
+    }
 }
+
+
+let rec loop: Fun(Int) = fun(n: Int) {
+    match n == 10 {
+        .True -> .,
+        .False -> {
+            dump(Int)(fib(n))
+            let _ = loop(n+1)
+        }
+    }
+}
+
+loop(0)
+
+

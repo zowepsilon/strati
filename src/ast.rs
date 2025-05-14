@@ -39,6 +39,10 @@ pub enum ExpressionData {
         statements: Vec<Statement>,
         flatten: bool,
     },
+    Match {
+        value: Box<Expression>,
+        branches: Vec<(Pattern, Expression)>,
+    },
     Equal(Box<Expression>, Box<Expression>),
     Add(Box<Expression>, Box<Expression>),
     Const(Box<Expression>),
@@ -88,6 +92,21 @@ pub enum Statement {
         value: Expression,
     },
     Expression(Expression),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+    IntLiteral(String),
+    StringLiteral(String),
+    Binding(Ident),
+    Constructor {
+        name: Option<Ident>,
+        data: Vec<Pattern>,
+    },
+    FunType {
+        args: Vec<Pattern>,
+        return_type: Option<Box<Pattern>>,
+    },
 }
 
 impl Ident {
@@ -236,6 +255,19 @@ impl std::fmt::Display for ExpressionData {
 
                     Ok(())
                 }
+            },
+            ED::Match { value, branches } => {
+                write!(f, "match ")?;
+                write!(f, "{}", value.data)?;
+                writeln!(f, "{{")?;
+
+                for (pat, expr) in branches {
+                    write!(f, "{pat:?} -> {}", expr.data)?;
+                }
+
+                write!(f, "}}")?;
+
+                Ok(())
             }
             ED::Const(inner) => write!(f, "const {:indent$}", inner.data),
             ED::Quote(inner) => {
@@ -257,7 +289,7 @@ impl std::fmt::Display for ExpressionData {
                 }
             }
             ED::FunType { args, return_type } => {
-                write!(f, "fn(")?;
+                write!(f, "Fun(")?;
                 for arg in args {
                     write!(f, "{:indent$}", arg.data)?;
                 }
@@ -334,6 +366,47 @@ impl std::fmt::Display for Ident {
         match self {
             Ident::Plain(name) => write!(f, "{name}"),
             Ident::Splice(name) => write!(f, "${name}"),
+        }
+    }
+}
+
+impl std::fmt::Display for Pattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Pattern::IntLiteral(x) => write!(f, "{x}"),
+            Pattern::StringLiteral(s) => write!(f, "\"{s}\""),
+            Pattern::Binding(ident) => write!(f, "{ident}"),
+            Pattern::Constructor { name, data } => {
+                write!(f, ".")?;
+                if let Some(name) = name {
+                    write!(f, "{name}")?;
+                }
+
+                if !data.is_empty() {
+                    write!(f, "(")?;
+
+                    for field in data {
+                        write!(f, "{}, ", field)?;
+                    }
+
+                    write!(f, ")")?;
+                }
+
+                Ok(())
+            },
+            Pattern::FunType { args, return_type } => {
+                write!(f, "Fun(")?;
+                for arg in args {
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, ")")?;
+
+                if let Some(ret) = return_type {
+                    write!(f, " -> {}", ret)?;
+                }
+
+                Ok(())
+            },
         }
     }
 }

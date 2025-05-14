@@ -1,7 +1,7 @@
 use std::iter;
 use std::collections::HashMap;
 
-use crate::ast::{BindingKind, Expression, ExpressionData, Ident, Statement};
+use crate::ast::{BindingKind, Expression, ExpressionData, Ident, Pattern, Statement};
 use crate::interpreter::{Runtime, Thunk, TRACE};
 
 #[derive(Debug)]
@@ -91,9 +91,93 @@ impl Runtime {
 
                 Expression {
                     data: ED::Equal(Box::new(left), Box::new(right)),
-                    type_: Some(Box::new(ED::unit().untyped()))
+                    type_: Some(Box::new(ED::Identifier("Bool".to_string()).untyped()))
                 }
             },
+            ED::Match { value, branches } => {
+                let value = self.type_expression(*value);
+                
+                let mut typed_branches = Vec::with_capacity(branches.len());
+
+                let mut main_type = match branches.get(0) {
+                    None => {
+                        return Expression {
+                            type_: Some(Box::new(ED::unit().untyped())),
+                            data: ED::Match { value: Box::new(value), branches: vec![] }
+                        };
+                    },
+                    Some((pat, expr)) => {
+                        self.inherit_const_scope();
+                        self.inherit_scope();
+
+                        let bindings = self.types_of_pattern(
+                                pat, 
+                                value.type_.as_ref().expect("typed value should be typed")
+                            );
+
+                        self.const_state
+                            .as_mut()
+                            .expect("const method called at runtime")
+                            .scopes
+                            .last_mut()
+                            .expect("current const scope should exist")
+                            .extend(bindings);
+
+                        let expr = self.type_expression(expr.clone());
+                        typed_branches.push((pat.clone(), expr.clone()));
+
+                        self.const_state
+                            .as_mut()
+                            .expect("const method called at runtime")
+                            .scopes
+                            .pop();
+                        self.scopes.pop();
+                        
+                        *expr.type_.unwrap()
+                    }
+                };
+
+                let mut branches = branches.into_iter();
+                let _ = branches.next();
+
+                for (pat, expr) in branches {
+                    self.inherit_const_scope();
+                    self.inherit_scope();
+
+                    let bindings = self.types_of_pattern(
+                            &pat, 
+                            value.type_.as_ref().expect("typed value should be typed")
+                        );
+
+                    self.const_state
+                        .as_mut()
+                        .expect("const method called at runtime")
+                        .scopes
+                        .last_mut()
+                        .expect("current const scope should exist")
+                        .extend(bindings);
+
+                    let expr = self.type_expression(expr.clone());
+
+                    main_type = self.merge_types(main_type, *expr.type_.clone().unwrap());
+
+                    typed_branches.push((pat.clone(), expr.clone()));
+
+                    self.const_state
+                        .as_mut()
+                        .expect("const method called at runtime")
+                        .scopes
+                        .pop();
+                    self.scopes.pop();
+                }
+
+
+                Expression {
+                    data: ED::Match { value: Box::new(value), branches: typed_branches },
+                    type_: Some(Box::new(main_type))
+                }
+
+            }
             ED::Fun {
                 args,
                 return_type,
@@ -338,7 +422,53 @@ impl Runtime {
             .scopes
             .push(last_const_scope);
     }
+    
+    fn types_of_pattern(&mut self, pat: &Pattern, type_: &Expression) -> HashMap<String, Expression> {
+        use ExpressionData as ED;
 
+        let type_ = self.evaluate(type_.clone());
+
+        match (pat, type_.data.clone()) {
+            (Pattern::Binding(name), _) => HashMap::from([(name.plain_ref().clone(), type_.clone())]),
+            (Pattern::IntLiteral(_), ED::BuiltinInt) => HashMap::new(),
+            (Pattern::StringLiteral(_), ED::BuiltinString) => HashMap::new(),
+            (Pattern::Constructor { name: pname, data: pdata }, ED::Constructor { name: tname, data: tdata }) => {
+                assert_eq!(*pname, tname, "mismatched types between constructor {pname:?} et {tname:?}");
+
+                let mut out = HashMap::new();
+
+                for (p, t) in iter::zip(pdata, tdata) {
+                    out.extend(self.types_of_pattern(p, &t).into_iter());
+                }
+
+                out
+            },
+            (Pattern::Constructor { name: pname, data: pdata }, ED::SumTypeValue(variants)) => {
+                let pname = match pname {
+                    None => String::new(),
+                    Some(name) => name.plain_ref().to_string()
+                };
+
+                let tdata = &variants[&pname];
+
+                let mut out = HashMap::new();
+
+                for (p, t) in iter::zip(pdata, tdata) {
+                    out.extend(self.types_of_pattern(p, &t).into_iter());
+                }
+
+                out
+            }
+            _ => panic!("could not type check pattern matching")
+        }
+    }
+
+    fn merge_types(&mut self, t1: Expression, t2: Expression) -> Expression {
+        match (&t1.data, &t2.data) {
+            (x, y) if x == y => t1.clone(),
+            _ => self.evaluate(ExpressionData::SumType(Box::new(t1), Box::new(t2)).untyped())
+        }
+    }
 
     fn type_statement(&mut self, stmt: Statement, typed_statements: &mut Vec<Statement>) -> Option<Option<Expression>> {
         match stmt {
@@ -558,6 +688,15 @@ impl Runtime {
                     }
                 }
             },
+            ED::Match { value, branches } => {
+                Expression {
+                    type_: expr.type_,
+                    data: ED::Match {
+                        value: Box::new(self.interpolate_expression(*value)),
+                        branches: branches.into_iter().map(|(p, v)| (self.interpolate_pattern(p), self.interpolate_expression(v))).collect()
+                    }
+                }
+            }
             ED::Closure { value, context } => {
                 Expression {
                     type_: expr.type_,
@@ -618,6 +757,25 @@ impl Runtime {
         }
     }
 
+    fn interpolate_pattern(&self, pat: Pattern) -> Pattern {
+        match pat {
+            Pattern::Binding(name) => Pattern::Binding(self.interpolate_ident(name)),
+            Pattern::IntLiteral(_) => pat,
+            Pattern::StringLiteral(_) => pat,
+            Pattern::Constructor { name, data } =>
+                Pattern::Constructor {
+                    name: name.map(|x| self.interpolate_ident(x)),
+                    data: data.into_iter().map(|p| self.interpolate_pattern(p)).collect()
+                },
+            Pattern::FunType { args, return_type } => {
+                Pattern::FunType {
+                    args: args.into_iter().map(|p| self.interpolate_pattern(p)).collect(),
+                    return_type: return_type.map(|x| Box::new(self.interpolate_pattern(*x)))
+                }
+            },
+        }
+    }
+
     fn escape(&self, expr: Expression) -> Option<Expression> {
         if TRACE { dbg!("can_escape", &expr); }
         
@@ -654,6 +812,15 @@ impl Runtime {
                     }
                 })
             },
+            ExpressionData::Match { value, branches } => {
+                Some(Expression {
+                    type_: expr.type_,
+                    data: ExpressionData::Match {
+                        value: Box::new(self.escape(*value)?),
+                        branches: branches.into_iter().map(|(p, v)| Some((p, self.escape(v)?))).collect::<Option<Vec<_>>>()?
+                    }
+                })
+            }
             ExpressionData::Add(left, right) => {
                 Some(Expression {
                     type_: expr.type_,
@@ -757,6 +924,7 @@ impl Runtime {
             ExpressionData::Thunk(id) => todo!("thunk {id} escaping"),
         }
     }
+
 }
 
 impl ExpressionData {
@@ -764,7 +932,7 @@ impl ExpressionData {
         use ExpressionData as ED;
 
         match (self, other) {
-            (ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Closure{..}
+            (ED::Identifier(_) | ED::Call { .. } | ED::Block { .. } | ED::Closure{..} | ED::Match{..}
             | ED::Splice(_) | ED::Equal(_, _) | ED::Add(_, _) | ED::SumType(_, _) | ED::Const(_), _)
                 => rt.evaluate(self.clone().untyped()).data.is_subtype_of(other, rt),
 
@@ -852,6 +1020,7 @@ impl ExpressionData {
             | ED::SumType(_, _)
             | ED::Equal(_, _)
             | ED::Closure{..}
+            | ED::Match{..}
             | ED::Thunk(_) => 
                 rt.evaluate(self.clone().untyped()).data.is_type(rt),
             | ED::IntLiteral(_)
