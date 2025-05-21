@@ -504,8 +504,23 @@ impl Runtime {
                         let last_scope = state.scopes.last_mut().expect("current scope should exist");
 
                         match &annotation {
-                            Some(a) => last_scope.insert(variable.plain_ref().clone(), a.clone()),
-                            None => panic!("unannotated recursive binding {}", variable.plain_ref())
+                            Some(a) => {
+                                last_scope.insert(variable.plain_ref().clone(), a.clone());
+                            },
+                            None => {
+                                match &value.data {
+                                    ExpressionData::Fun { args, return_type, .. } => {
+                                        last_scope.insert(
+                                            variable.plain_ref().clone(),
+                                            ExpressionData::FunType {
+                                                args: args.iter().map(|(_, ty)| ty.clone()).collect(),
+                                                return_type: Some(return_type.clone().unwrap_or_else(|| Box::new(Expression::unit_typed())))
+                                            }.untyped()
+                                        );
+                                    },
+                                    _ => panic!("unannotated recursive binding {}", variable.plain_ref())
+                                }
+                            }
                         };
 
                         let value = self.type_expression(value);

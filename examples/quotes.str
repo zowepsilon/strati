@@ -3,6 +3,8 @@ const assert_is = fun (T: Type) {
 }
 
 const create_variable = fun(name: String, value: .) {
+    let name = name
+
     quote {
         let $name = $value
         let just_created = $name // TODO: split interpolated identifiers and string literals

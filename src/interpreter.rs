@@ -464,6 +464,7 @@ impl Runtime {
             .expect("current scope should exist")
             .get(var)
             .unwrap_or_else(|| {
+                dbg!(&self.scopes.last().unwrap().keys().collect::<Vec<_>>());
                 panic!(
                     "unknown variable {var} at {} time",
                     if self.const_state.is_some() {
