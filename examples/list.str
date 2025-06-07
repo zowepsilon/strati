@@ -1,0 +1,22 @@
+const rec List = fun(T: Type) {
+    .Nil | .Cons(T, List(T))
+}
+
+const map = fun(A: Type, B: Type) {
+    let rec map_specialise = fun (xs: List(A), f: Fun(A) -> B) -> List(B) {
+        match xs {
+            .Nil -> .Nil,
+            .Cons(h, t) -> .Cons(f(h), map_specialise(t, f))
+        }
+    }
+
+    map_specialise
+}
+
+let add_one = fun (x: Int) -> Int {
+    x + 1
+}
+
+let xs: List(Int) = .Cons(1, .Cons(2, .Cons(3, .Nil)))
+
+map(Int, Int)(xs, add_one)

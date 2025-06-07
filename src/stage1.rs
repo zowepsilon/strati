@@ -597,7 +597,7 @@ impl Runtime {
                         .expect("current scope should exist")
                         .insert(variable.plain_ref().clone(), value.clone());
                 }
-            
+
                 None
             },
         }
@@ -849,6 +849,8 @@ impl Runtime {
                 })
             }
             ExpressionData::Fun { body, context, args, return_type } => {
+                
+
                 Some(Expression {
                     type_: expr.type_,
                     data: ExpressionData::Fun {

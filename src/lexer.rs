@@ -30,6 +30,8 @@ pub enum TokenData {
     Quote,
     Rec,
     Match,
+    #[expect(dead_code)]
+    Module,
 
     // specials
     NewLine,
@@ -311,6 +313,7 @@ impl Display for TokenData {
             TD::Struct => write!(f, "struct "),
             TD::Const => write!(f, "const"),
             TD::Quote => write!(f, "quote"),
+            TD::Module => write!(f, "module"),
             TD::Rec => write!(f, "rec"),
             TD::Match => write!(f, "match"),
             TD::NewLine => writeln!(f),

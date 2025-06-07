@@ -52,12 +52,17 @@ pub enum ExpressionData {
         return_type: Option<Box<Expression>>,
     },
     SumType(Box<Expression>, Box<Expression>),
+    //Module {
+    //    body: Box<Expression>,
+    //    bindings: HashMap<String, Expression>,
+    //},
     // internal, unparsable expressions
     Closure {
         value: Box<Expression>,
         context: HashMap<String, Expression>
     },
-    SumTypeValue(HashMap<String, Vec<Expression>>), // .A(Int) | .B | .C(String, String) ==> { "A": [Int], "B": [], "C": [String, String] }
+    // .A(Int) | .B | .C(String, String) ==> { "A": [Int], "B": [], "C": [String, String] }
+    SumTypeValue(HashMap<String, Vec<Expression>>), 
     BuiltinInt,
     BuiltinString,
     BuiltinType,
@@ -213,7 +218,16 @@ impl std::fmt::Display for ExpressionData {
                 write!(f, " {:indent$}", body.data)?;
 
                 Ok(())
-            }
+            },
+            // ED::Module { body, bindings } => {
+            //     write!(f, "module [")?;
+            //
+            //     for (name, val) in bindings {
+            //         write!(f, "{} = {}", name, val.data)?;
+            //     }
+            //
+            //     write!(f, "] {}", body.data)
+            // }
             ED::Closure { value, context } => {
                 if false && !context.is_empty() {
                     write!(f, " [")?;
