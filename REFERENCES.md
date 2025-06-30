@@ -9,7 +9,7 @@
 - https://davidchristiansen.dk/tutorials/bidirectional.pdf
 - https://arxiv.org/pdf/1306.6032
 - https://dl.acm.org/doi/pdf/10.1145/3450952
-## Inférence
+### Inférence
 - https://en.wikipedia.org/wiki/Type_inference
 - https://en.wikipedia.org/wiki/Unification_(computer_science)
 - https://web.archive.org/web/20210507034051/https://users.cis.fiu.edu/~smithg/papers/thesis91.pdf
