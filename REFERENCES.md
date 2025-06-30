@@ -1,5 +1,34 @@
 # References
 
+## Index
+
+#### Motivation
+#### Parser
+#### Systèmes de types
+##### Bidirectional
+##### Inférence
+##### Hindley-Milner
+##### Dependent types
+#### Systèmes d'effets
+#### Optimiseur
+#### Metaprogramming
+##### Staged compilation
+##### Macros
+##### Quasiquotation
+#### Général
+#### Implémentations
+##### OCaml
+##### Rust
+##### C
+##### Agda
+#### En rapport
+#### Old (autres idées de TIPE)
+##### Logique théorique
+##### Assistant de preuve
+##### Prolog
+##### Analyse statique
+##### Théorie des types
+
 ## Motivation
 - https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0707r0.pdf
 ## Parser
@@ -82,7 +111,7 @@ file:///home/anatom/T%C3%A9l%C3%A9chargements/icfp23-ocaml-final3.pdf
 - http://adam.chlipala.net/papers/UrPLDI10/UrPLDI10.pdf
 - https://arxiv.org/pdf/2309.08207
 - https://okmij.org/ftp/meta-programming/HPC.html
-### macros
+### Macros
 - https://en.wikipedia.org/wiki/Hygienic_macro
 - https://blog.hamaluik.ca/posts/getting-started-with-haxe-macros/
 - https://lisp-docs.github.io/docs/tutorial/macros
@@ -107,17 +136,17 @@ file:///home/anatom/T%C3%A9l%C3%A9chargements/icfp23-ocaml-final3.pdf
 - https://pdf.sciencedirectassets.com/271600/1-s2.0-S0167642300X00792/1-s2.0-016764239190036W/main.pdf?X-Amz-Security-Token=IQoJb3JpZ2luX2VjEHkaCXVzLWVhc3QtMSJHMEUCIQDUPCArmlQAn6V%2FCCc3wWMGtu1HUPFaIvEr18fQidyJ8wIgWIJyDoGgoir7auhsaHicT6sf2HoLRfi4cuA0nW9a3FkqvAUI8v%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAFGgwwNTkwMDM1NDY4NjUiDIm1XrqW43L%2FJuhQyiqQBfNVmH%2BKq0ffV8Uy%2FaOihP%2F53YbeZDOuCYRfSGON8M3t1dOsaWunde2rNd%2FFJEsmVKRvWhcdqVCM8ocKXpGPF1ozcrxC5HiY6K9z2jS8gX71Yb%2FEBx1c57iBTx6sZl1KtTvkN333lrgx0g4FY4vfU5i4r7zrNwwV5Ohuq9TGjxSP0%2BbXCHYkArJ%2BX%2F3utmfYZUjuh5dkBfAytB8iHbyhBUTslaiDDgMje6B4Xy3ZM90WcYUeglTdpyjy2lhtVVkqmIS0rcj2PmvACycNPDvYD%2Bj1rurK%2BtdV5rmjygvH2qsRwphVfNbTzXi5tqkaRn3uHbsQ2QvRHNtsROy3DTASij9B4EMtFkHgBW2qMbIrpg2Jq8UUPfBbBnHyWfHO6R%2F4UCPYu1pPiK%2FUo%2ByOjOFA1Tt%2FllAH6mSwZgsDm25jaGWBu%2Bies78IEvxPh5xB5Du%2FjN9ypIMKF%2BrLfWMCxrw17FBgvqGWnhXPdQLcrnroxs7SD92Zhqi9sebPwiwnVGStfdjb72qgdnYHGk541Cq5A2BaQ8gmsfPiUesDIxbrJqn%2FQiEIHHchja1twd1pQTVQcUW20rPawJAhdFOhZQPwOASUJbBhdFSz6Ti6q2wiiOGzcsXPl9iXKWMJFTdCAA6fIjvx%2FHlfBWhoBgMCCbRBsklmnNxVpk1jeGsHlHPUOl0Whdn3ewEiuJYTTtbXpcTAmF4THdSI6Bg4ZvkKCLmEbWeo5OAIgwK8SiaC0yyqwRCuqvj%2F4BE%2BvpyJEeaccE8B4kP1ppnbCRp0hX9Yw0cAawlm01PNw4%2FPeiILE60yXjGQhBag6S36yEn%2Bwo4wh8H8xEi49FVJdET0onnke5%2FcReoP%2BM8FnlBZOvZnBzV4XF3YMOKb2LIGOrEB0ccrlCvYW1Cg%2Fv%2FlewsMHvW31EfvPfOios9K8D5akUYWb%2FXw2VJVi7jdIcN%2FaBZ6Wy9XUK9s4ZS6NtwBgzhnJOD%2BU%2Bwo4n7Fv65J51BmWi%2FCr01ZHvbPBKqE5pEZmHCAI3%2B0Ic8MK9zCdv%2Bx8olzB%2FxMHQwRPfXUGV9LFhqKHie17jl9rgeLPeI9x1%2BdtmKn55FmhkWaYAagiY1QUCbRltiARiih8OgOSF5%2Bt6EXBIrT&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20240528T175452Z&X-Amz-SignedHeaders=host&X-Amz-Expires=300&X-Amz-Credential=ASIAQ3PHCVTY6GDYE4UX%2F20240528%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=57bec295f8b4f69c337784ee92d4b2c0b37e4362cbedee174dd563cc7f2ae150&hash=52bdbc3e2c6fd9d12b52e4d5b4c401efebd6d7165723e813ab12a492906ce87d&host=68042c943591013ac2b2430a89b270f6af2c76d8dfd086a07176afe7c76c2c61&pii=016764239190036W&tid=spdf-0dd74150-a46e-41f0-8697-e8def4b340b9&sid=52f8a5f673b4f742196b8698965d076ea172gxrqb&type=client&tsoh=d3d3LnNjaWVuY2VkaXJlY3QuY29t&ua=001c57580456570c0158&rr=88b01cc649ac0198&cc=fr
 - https://arxiv.org/pdf/2309.15416
 - https://www.brics.dk/RS/01/23/BRICS-RS-01-23.pdf
-### quasiquotation
+### Quasiquotation
 - https://arxiv.org/pdf/1308.2149
 - https://docs.racket-lang.org/reference/quasiquote.html
-## général
+## Général
 - https://en.wikipedia.org/wiki/Programming_language_theory
-## implémentations
-### ocaml
+## Implémentations
+### OCaml
 - https://gallium.inria.fr/blog/we-need-a-representative-benchmark-suite/
 - https://v2.ocaml.org/manual/gadts-tutorial.html#c%3Agadts-tutorial
 - https://go.dev/blog/type-inference
-### rust
+### Rust
 - https://rust-lang.github.io/chalk/book/
 - https://github.com/rust-lang/chalk/blob/master/libstd.chalk
 - https://github.com/rust-lang/chalk?tab=readme-ov-file
@@ -132,12 +161,12 @@ file:///home/anatom/T%C3%A9l%C3%A9chargements/icfp23-ocaml-final3.pdf
 - https://www.microsoft.com/en-us/research/wp-content/uploads/1997/01/henk.pdf
 - https://nim-lang.org/docs/intern.html
 - https://jaked.org/blog/2021-09-07-Reconstructing-TypeScript-part-0
-### agda
+### Agda
 - https://www.cse.chalmers.se/~ulfn/papers/afp08/tutorial.pdf
 - https://www2.tcs.ifi.lmu.de/~abel/DepTypes.pdf
 - https://www.cs.bu.edu/~hwxi/atslangweb/Examples.html
 - https://sylvainleclercq.com/blog/2020/05/09/algebraic-datatypes-cpp.html
-## en rapport
+## En rapport
 - https://www.modular.com/blog/mojo-vs-rust-is-mojo-faster-than-rust
 - https://www.ralfj.de/blog/2018/07/24/pointers-and-bytes.html
 - https://davidtw.co/media/masters_dissertation.pdf
@@ -149,8 +178,8 @@ file:///home/anatom/T%C3%A9l%C3%A9chargements/icfp23-ocaml-final3.pdf
 - https://gist.github.com/AndrasKovacs/fc9e20b0976b7e236b5899fde8f5c95d
 - https://pdf.sciencedirectassets.com/272990/1-s2.0-S1571066105X0202X/1-s2.0-S1571066105002616/main.pdf?X-Amz-Security-Token=IQoJb3JpZ2luX2VjECwaCXVzLWVhc3QtMSJHMEUCIQDNJNFQ8ikT%2BhOJdBYhCqgQL3TUFUeHTwL0hhS6mH0EzgIgO7XZ3LB4ySnFJvC2JxbWl6q5358m%2FTTeB1S8SLKR4aIqvAUIpP%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAFGgwwNTkwMDM1NDY4NjUiDH2%2BsUp8bxYKE%2BsjnyqQBSLlFgu%2Bs213S7H9V2fpi8gtTlv5jGn4dp9VuPc9rondPppeATe8zxFXLC%2BqcrXGq2fj%2F0HPKD7HWwWuco5ZMADF5bSYrYHrcp8xJY1WFLgzm2wz%2FpPxhJAB8thanV5kn6tIbt6OqzEaKXoam8EQMy5A5lam9QI4ILMgSONTNgOOhgIFS5QS1WqLQNX8qPR9UX%2FTmaJd3RplrDaNEJX4I4mFeWFVAuYrr69HRh7V2t742XV9KK%2FpbFLmMBbiOWJabkmPuUNLiOYwu33G00khPU%2F5lWxoKrbU9IzSTjGRQLjMpj%2BZAwX7lUSk%2BGzFP%2F99PnGe%2BoWlDBBggwY%2BPmS62zzPTmJX%2BVYZpHvvNa3X6mfMWV1g1PLNGg8K6mWSTB1QCxdYnuPUOrUEhUAr4HqZGoU6K%2BY2cxviqsBeYbwnjvsh6QB8hD3%2BMEp%2FmAKjZrPENbIxWWSrA1FCgKtscWd2kAgrim%2BwkIx1QZbM8XqBDPKZQUF%2FHLif3dhgSx%2BwZRU3jLfKvUVDYGR7jrcGmGQUWje48HiAngTIXwJ%2FHK0R0ogTBUDCGiqmJAvDsHSXmkSkpcDC0tYOV4JBwiGXSKKXAGF6QBLrDX6GXZmki8zRwWkrVYRblQnlmVaVRKS%2BGaPysA3OUDSHCP%2FnUlh0673hym7oWdKID%2FpGB9BDL9Tk79E9yE6ZTVeuP9Coq52ZtmEVgylUBaM%2BIcg36oi%2BY9jDrnEGeIK6d5jC0Y0tuPa0lo2ujMcoEGQ%2BUxYodtj28iPenpC1tOXIJ5sFpyFBrYfR6bsbYadfvZvx%2F%2FvYdXgmjs6f3H6amBsYpXvLT39lBpvIpr8ldyt6fKkDMLXX0OXUhuF5yRBkmrB8F8xmxvNMhJGCMIuOx7IGOrEBNUmlv7FQDtK%2FeDdFBdZDf5VrlxU0OnorFlY%2BSiGCPNw3H1F5A4JBDe62ozOD0%2FsVHKLIxMjYw2AQONlyPU6%2Bn%2B4FozbwJ5mXYeE106tyd%2Bpn3aXE%2F52ekaP6OLYXbAw21VYeKcWr88AcNLCAk95oTNf0Xy0SdE8rbmajEqZKUzOVgq%2FGCrm996g5WcAPx5Mnp%2Bo%2FDV38LQAN6vbjLo7HaJ7g5MNFshGR86BrBnjU4NUe&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20240525T122231Z&X-Amz-SignedHeaders=host&X-Amz-Expires=300&X-Amz-Credential=ASIAQ3PHCVTYYICH6SPU%2F20240525%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=958875f920a3957383abfbb63228df9eeba4e6430ada2469a5cd9c86d7fa5fe6&hash=b4807f8cdc2bd50f4b85a5ae46011204b38153dcb0158c968cc62617d8ce2648&host=68042c943591013ac2b2430a89b270f6af2c76d8dfd086a07176afe7c76c2c61&pii=S1571066105002616&tid=spdf-33410b26-90b2-457d-b6ee-8b4c7daaf158&sid=ab0297a91569b645f28aab94b167e8090fa5gxrqb&type=client&tsoh=d3d3LnNjaWVuY2VkaXJlY3QuY29t&ua=001c57585f53510b065f&rr=88957dd10c26a1a9&cc=fr
 - http://hjemmesider.diku.dk/~torbenm/
-## old (autres idées de TIPE)
-### logique théorique
+## Old (autres idées de TIPE)
+### Logique théorique
 - https://en.wikipedia.org/wiki/Proof_theory#Ordinal_analysis
 - https://en.wikipedia.org/wiki/Reverse_mathematics
 - https://en.wikipedia.org/wiki/Formal_language
@@ -164,22 +193,22 @@ file:///home/anatom/T%C3%A9l%C3%A9chargements/icfp23-ocaml-final3.pdf
 - https://en.wikipedia.org/wiki/Herbrand%27s_theorem
 - https://en.wikipedia.org/wiki/Natural_deduction
 - https://en.wikipedia.org/wiki/Prenex_normal_form
-### Assistant de preuve
+### Assistant de preuve
 - https://en.wikipedia.org/wiki/Automated_theorem_proving
 - https://link.springer.com/content/pdf/10.1007/bf00881902.pdf
 - https://dl.acm.org/doi/pdf/10.1145/3360573
 - https://dl.acm.org/doi/pdf/10.1145/99370.99404
-### prolog
+### Prolog
 - https://www.swi-prolog.org/pldoc/man?section=swiprolog
 - https://swish.simply-logical.space/
 - https://book.simply-logical.space/src/text/1_part_i/1.0.html
-### analyse statique
+### Analyse statique
 - https://en.wikipedia.org/wiki/Separation_logic
 - https://www-master.ufr-info-p6.jussieu.fr/2018/TAS
 - https://www-apr.lip6.fr/~chaillou/Public/enseignement/2018-2019/tas/
 - https://dl.acm.org/doi/abs/10.1145/3360573
 - https://en.wikipedia.org/wiki/Denotational_semantics
-### théorie des types
+### Théorie des types
 - https://arxiv.org/pdf/2212.11082.pdf
 - https://www.ams.org/notices/201309/rnoti-p1164.pdf
 - https://books.google.fr/books?hl=fr&lr=&id=XgyI7vY0BLgC&oi=fnd&pg=PP1&dq=type+theory&ots=JuueXNq9zI&sig=jzicue4ztZwz4YAWYLEsL85Je40&redir_esc=y#v=onepage&q=type%20theory&f=false
