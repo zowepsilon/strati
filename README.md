@@ -45,3 +45,9 @@ Examples can be found in [examples/](examples/). Every example is part of the te
 - `ast/interpreter.rs`: walk-tree interpreter that runs the language once it is typed.
 - `ast/stage1.rs`: typing and execution at compile time
 - `src/tests.rs`: tests. runs every program in [examples/](examples/).
+
+### Resources
+
+> This TIPE was a huge pretext for me to learn A LOT about compilers, type theory and many related subjects. 
+
+*The list of resources I've read can be found [here](REFERENCES.md).*
