@@ -2,32 +2,32 @@
 
 ## Index
 
-#### Motivation
-#### Parser
-#### Systèmes de types
-##### Bidirectional
-##### Inférence
-##### Hindley-Milner
-##### Dependent types
-#### Systèmes d'effets
-#### Optimiseur
-#### Metaprogramming
-##### Staged compilation
-##### Macros
-##### Quasiquotation
-#### Général
-#### Implémentations
-##### OCaml
-##### Rust
-##### C
-##### Agda
-#### En rapport
-#### Old (autres idées de TIPE)
-##### Logique théorique
-##### Assistant de preuve
-##### Prolog
-##### Analyse statique
-##### Théorie des types
+- Motivation
+- Parser
+- Systèmes de types
+  - Bidirectional
+  - Inférence
+  - Hindley-Milner
+  - Dependent types
+- Systèmes d'effets
+- Optimiseur
+- Metaprogramming
+  - Staged compilation
+  - Macros
+  - Quasiquotation
+- Général
+- Implémentations
+  - OCaml
+  - Rust
+  - C
+  - Agda
+- En rapport
+- Old (autres idées de TIPE)
+  - Logique théorique
+  - Assistant de preuve
+  - Prolog
+  - Analyse statique
+  - Théorie des types
 
 ## Motivation
 - https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0707r0.pdf
