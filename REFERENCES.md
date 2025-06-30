@@ -55,9 +55,6 @@
 - https://github.com/rntz/unidirectional-inference
 - https://agda.readthedocs.io/en/v2.6.4.3-r1/language/implicit-arguments.html
 - https://www.reddit.com/r/ProgrammingLanguages/comments/87c5dw/what_are_the_common_ways_of_performing/
-- https://www.reddit.com/r/ProgrammingLanguages/comments/87c5dw/what_are_the_common_ways_of_performing/
-- https://www.reddit.com/r/ProgrammingLanguages/comments/87c5dw/what_are_the_common_ways_of_performing/
-- https://www.reddit.com/r/ProgrammingLanguages/comments/87c5dw/what_are_the_common_ways_of_performing/
 ### Hindley-Milner
 - https://en.wikipedia.org/wiki/Hindley%E2%80%93Milner_type_system
 - https://gallium.inria.fr/~fpottier/publis/fpottier-appsem-2005.pdf
