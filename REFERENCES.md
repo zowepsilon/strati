@@ -32,6 +32,7 @@
 ## Motivation
 - https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0707r0.pdf
 ## Parser
+- https://craftinginterpreters.com/parsing-expressions.html
 - https://en.wikipedia.org/wiki/Van_Wijngaarden_grammar
 ## Systèmes de types
 ### Bidirectional
