@@ -44,7 +44,7 @@ Examples can be found in [examples/](examples/). Every example is part of the te
 - `src/main.rs`: entry point 
 - `src/lexer.rs`: lexer
 - `src/parser.rs`: parser
-- `src/ast.rs` data types for the abstract syntax tree, which have the double purpose of being the runtime values as well
+- `src/ast.rs` data types for the abstract syntax tree, which has the double purpose of being the runtime values as well
 - `ast/interpreter.rs`: walk-tree interpreter that runs the language once it is typed.
 - `ast/stage1.rs`: typing and execution at compile time
 - `src/tests.rs`: tests. Runs every program in [examples/](examples/).
