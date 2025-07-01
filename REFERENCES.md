@@ -1,5 +1,7 @@
 # References
 
+Note : les sections ne sont pas organisées dans un ordre particulier.
+
 ## Index
 
 - Motivation
